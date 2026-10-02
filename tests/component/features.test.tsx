@@ -592,6 +592,7 @@ describe("ContinueWatchingRail", () => {
             lesson,
             percent: 30,
             positionSec: 184,
+            watchedSeconds: 184,
             updatedAt: "2025-02-01T10:00:00.000Z",
           },
           {
@@ -599,6 +600,7 @@ describe("ContinueWatchingRail", () => {
             lesson: COURSE.modules[0]!.lessons[1]!,
             percent: 10,
             positionSec: 42,
+            watchedSeconds: 42,
             updatedAt: "2025-03-01T10:00:00.000Z",
           },
         ]}
@@ -623,6 +625,7 @@ describe("ContinueWatchingRail", () => {
           lesson: entry,
           percent: 20,
           positionSec: 60,
+          watchedSeconds: 60,
           updatedAt: `2025-02-0${index + 1}T10:00:00.000Z`,
         }))}
       />,

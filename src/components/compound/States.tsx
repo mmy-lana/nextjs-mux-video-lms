@@ -21,10 +21,16 @@ export interface EmptyStateProps {
   title: string;
   description?: string;
   icon?: React.ReactNode;
-  /** Primary action, e.g. "Browse courses". */
-  action?: { label: string; onClick: () => void; href?: string };
+  /**
+   * Primary action, e.g. "Browse courses".
+   *
+   * Give `href` for navigation and omit `onClick`; give `onClick` for an in-place
+   * action. A link that also needs a click handler is almost always a link that
+   * should have been a link.
+   */
+  action?: { label: string; onClick?: () => void; href?: string };
   /** Secondary action, e.g. "Clear filters". */
-  secondaryAction?: { label: string; onClick: () => void };
+  secondaryAction?: { label: string; onClick?: () => void };
   className?: string;
   children?: React.ReactNode;
 }

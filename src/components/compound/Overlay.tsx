@@ -243,17 +243,28 @@ function collectInertTargets(surface: HTMLElement | null): Array<{ node: HTMLEle
   const targets: Array<{ node: HTMLElement; inert: boolean }> = [];
 
   /*
-   * The surface is portalled to `<body>`, so everything else in the document is
-   * background. `inert` takes background content out of the tab order and hides
-   * it from assistive technology in one attribute, which keeps the two
-   * mechanisms in agreement where a root-level `aria-hidden` would not.
+   * `inert` takes background content out of the tab order *and* out of
+   * hit-testing, which is exactly what a modal needs — as long as the overlay's
+   * own wrapper stays out of it.
    *
-   * Ancestors of the surface are skipped — marking one inert would take the
-   * dialog itself out of play — and the subtree is walked rather than just its
-   * top level so a wrapper element cannot leave a focusable hole behind it.
+   * The surface is portalled to `<body>`, so its parent is not background
+   * content that happens to contain it; it *is* the overlay. Marking that
+   * `inert` removes the dialog from hit-testing, and with it every button
+   * inside: the surface renders perfectly and cannot be clicked. So the whole
+   * branch from `<body>` down to the surface is exempted, not just the surface.
    */
+  const isOverlayBranch = (node: HTMLElement): boolean => {
+    if (surface === null) return false;
+
+    for (let cursor: HTMLElement | null = surface; cursor !== null; cursor = cursor.parentElement) {
+      if (cursor === node) return true;
+    }
+
+    return false;
+  };
+
   const mark = (node: HTMLElement): void => {
-    if (node === surface || (surface !== null && surface.contains(node))) return;
+    if (isOverlayBranch(node)) return;
 
     targets.push({ node, inert: node.hasAttribute("inert") });
     node.setAttribute("inert", "");

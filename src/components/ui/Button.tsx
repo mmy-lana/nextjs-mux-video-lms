@@ -9,7 +9,13 @@
  */
 
 import { Loader2 } from "lucide-react";
-import { forwardRef, type ButtonHTMLAttributes, type ReactNode } from "react";
+import Link from "next/link";
+import {
+  forwardRef,
+  type AnchorHTMLAttributes,
+  type ButtonHTMLAttributes,
+  type ReactNode,
+} from "react";
 
 import { cn } from "@/lib/utils/cn";
 import { cva } from "./cva";
@@ -100,4 +106,41 @@ export function ButtonLabel({
   className?: string;
 }) {
   return <span className={cn("sr-only", className)}>{children}</span>;
+}
+
+export interface ButtonLinkProps
+  extends Omit<AnchorHTMLAttributes<HTMLAnchorElement>, "color">,
+    VariantPropsOfButton {
+  href: string;
+  leftIcon?: ReactNode;
+  rightIcon?: ReactNode;
+  /** Forces a client-side navigation instead of a full page load. */
+  prefetch?: boolean;
+}
+
+/**
+ * A link that looks like a button.
+ *
+ * Navigation is the common case on every screen, and a `<button>` that runs
+ * `router.push` loses middle-click, open-in-new-tab and the browser's own
+ * prefetch. So this is a real anchor wearing the button's classes.
+ */
+export function ButtonLink({
+  href,
+  variant = "primary",
+  size = "md",
+  block = false,
+  className,
+  leftIcon,
+  rightIcon,
+  children,
+  ...props
+}: ButtonLinkProps) {
+  return (
+    <Link href={href} className={buttonVariants({ variant, size, block, className })} {...props}>
+      {leftIcon ? <span className="shrink-0">{leftIcon}</span> : null}
+      <span className="truncate">{children}</span>
+      {rightIcon ? <span className="shrink-0">{rightIcon}</span> : null}
+    </Link>
+  );
 }

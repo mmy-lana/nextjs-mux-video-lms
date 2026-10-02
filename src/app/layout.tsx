@@ -1,6 +1,8 @@
 import type { Metadata, Viewport } from "next";
 import { Fraunces, Manrope } from "next/font/google";
 
+import { AppProviders } from "@/components/features/AppProviders";
+
 import "./globals.css";
 
 /**
@@ -70,8 +72,8 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           Skip to main content
         </a>
 
-        <div id="main-content" tabIndex={-1} className="outline-none">
-          {children}
+        <div id="main-content" tabIndex={-1} className="flex min-h-dvh flex-col outline-none">
+          <AppProviders>{children}</AppProviders>
         </div>
       </body>
     </html>

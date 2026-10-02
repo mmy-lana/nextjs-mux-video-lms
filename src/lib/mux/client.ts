@@ -18,6 +18,7 @@ import type {
   CreateUploadRequest,
   CreateUploadResponse,
   DeleteAssetResponse,
+  MuxStatusResponse,
   PlaybackPolicy,
   PlaybackTokens,
   UploadStatusResponse,
@@ -76,6 +77,20 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   }
 
   return payload as T;
+}
+
+/**
+ * What this deployment supports.
+ *
+ * Always resolves: an unreachable server is reported as "not configured",
+ * because the Studio's response to that is the same either way.
+ */
+export async function fetchMuxStatus(): Promise<MuxStatusResponse> {
+  try {
+    return await request<MuxStatusResponse>("/api/mux/upload");
+  } catch {
+    return { configured: false, signing: false };
+  }
 }
 
 /** Create a Mux direct upload and return its one-time upload URL. */

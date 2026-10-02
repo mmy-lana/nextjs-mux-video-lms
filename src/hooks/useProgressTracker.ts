@@ -117,6 +117,17 @@ export function useProgressTracker({
     (ended: boolean, force: boolean) => {
       if (!course || !lesson || !enabled) return;
 
+      /*
+       * Nothing is written before the player knows its duration.
+       *
+       * The first tick arrives while the playhead is still 0, before metadata
+       * has loaded. Writing then would overwrite the saved resume position with
+       * zero — and because that re-render feeds the player's `startTime`, the
+       * learner would be dropped back at the beginning of the lesson they asked
+       * to resume.
+       */
+      if (live.current.duration === null) return;
+
       const state = stateRef.current;
       const now = Date.now();
 

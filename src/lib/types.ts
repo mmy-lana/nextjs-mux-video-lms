@@ -243,6 +243,19 @@ export interface CreateUploadResponse {
   url: string;
 }
 
+/**
+ * `GET /api/mux/upload` — what this deployment can do.
+ *
+ * The Studio reads it on load so it can offer text-only authoring up front
+ * rather than failing an upload halfway through.
+ */
+export interface MuxStatusResponse {
+  /** API credentials present: direct uploads work. */
+  configured: boolean;
+  /** Signing keys present: signed playback is available. */
+  signing: boolean;
+}
+
 export type UploadStatus =
   | "waiting"
   | "asset_created"

@@ -152,6 +152,32 @@ describe("POST /api/mux/upload", () => {
     expect(uploadCreate).not.toHaveBeenCalled();
   });
 
+  it("accepts a different loopback port", async () => {
+    const { POST } = await importRoute("@/app/api/mux/upload/route");
+
+    // `next build && next start` serves on whatever port it is given, while the
+    // app URL keeps its development default.
+    const response = await POST(request("http://localhost:3000/api/mux/upload", {
+      method: "POST",
+      body: JSON.stringify({ policy: "public" }),
+      origin: "http://localhost:3111",
+    }));
+
+    expect(response.status).toBe(201);
+  });
+
+  it("still rejects a loopback-looking public host", async () => {
+    const { POST } = await importRoute("@/app/api/mux/upload/route");
+
+    const response = await POST(request("http://localhost:3000/api/mux/upload", {
+      method: "POST",
+      body: JSON.stringify({ policy: "public" }),
+      origin: "http://localhost.evil.example",
+    }));
+
+    expect(response.status).toBe(403);
+  });
+
   it("maps an SDK failure to 502 UPSTREAM_FAILED without leaking detail", async () => {
     const { POST } = await importRoute("@/app/api/mux/upload/route");
     uploadCreate.mockRejectedValue(new Error("token=hunter2 rejected by api.mux.com"));

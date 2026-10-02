@@ -13,7 +13,10 @@
     "test:component": "vitest run tests/component",
     "test:watch": "vitest",
     "test:e2e": "playwright test",
-    "verify": "pnpm run typecheck && pnpm run test && pnpm run build"
+    "verify": "pnpm run typecheck && pnpm run test && pnpm run build",
+    "test:e2e:ui": "playwright test --ui",
+    "verify:responsive": "node scripts/verify.mjs",
+    "audit": "node scripts/audit.mjs"
   },
   "dependencies": {
     "@mux/mux-node": "latest",

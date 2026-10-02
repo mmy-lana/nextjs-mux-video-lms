@@ -14,7 +14,7 @@
  */
 
 import dynamic from "next/dynamic";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type RefObject } from "react";
 import type { MuxPlayerRefAttributes } from "@mux/mux-player-react";
 import {
   Keyboard,
@@ -66,6 +66,20 @@ const MuxPlayer = dynamic(() => import("@mux/mux-player-react"), {
   loading: () => <PlayerSkeleton />,
 });
 
+/**
+ * Imperative transport controls.
+ *
+ * Notes need to seek, and "pause while typing" needs to pause — neither can be
+ * expressed as a prop, so the player publishes these once it has an element.
+ */
+export interface VideoPlayerControls {
+  seekTo: (seconds: number) => void;
+  play: () => void;
+  pause: () => void;
+  toggleFullscreen: () => void;
+  getCurrentTime: () => number;
+}
+
 export interface VideoPlayerProps {
   course: Pick<Course, "id" | "title">;
   lesson: Lesson;
@@ -89,6 +103,13 @@ export interface VideoPlayerProps {
   onRateChange?: (rate: number) => void;
   onVolumeChange?: (volume: number, muted: boolean) => void;
   onError?: (message: string | null) => void;
+  /**
+   * Receives the transport controls once the player element exists.
+   *
+   * A ref rather than a callback so the handle has a stable identity and the
+   * parent can call it from an event handler without re-subscribing.
+   */
+  controlsRef?: RefObject<VideoPlayerControls | null>;
   className?: string;
 }
 
@@ -126,6 +147,7 @@ export default function VideoPlayer(props: VideoPlayerProps) {
     onRateChange,
     onVolumeChange,
     onError,
+    controlsRef,
     className,
   } = props;
 
@@ -215,22 +237,71 @@ export default function VideoPlayer(props: VideoPlayerProps) {
   /* Player events                                                     */
   /* ---------------------------------------------------------------- */
 
+  /*
+   * The resume position is read through a ref, not a closure.
+   *
+   * The player can mount before storage has been read — `startTimeSec` is 0 on
+   * the first render and the real position arrives a tick later — and the
+   * `start-time` attribute is only applied at element creation. Reading a ref
+   * means whichever of the two handlers fires last uses the value that is
+   * current, not the one that happened to exist at mount.
+   */
+  const startRef = useRef(startTimeSec);
+  startRef.current = startTimeSec;
+  const seekAppliedRef = useRef(false);
+
+  /* A new lesson is a new position. */
+  useEffect(() => {
+    seekAppliedRef.current = false;
+  }, [lesson.id]);
+
+  const applyResumePosition = useCallback((element: MuxPlayerRefAttributes, durationSec: number) => {
+    if (seekAppliedRef.current) return;
+
+    const start = Math.min(Math.max(0, startRef.current), Math.max(0, durationSec - 1));
+    if (start <= 0) return;
+
+    seekAppliedRef.current = true;
+
+    /*
+     * Deferred by a frame on purpose.
+     *
+     * Mux Player applies its own `startTime` inside its `loadedmetadata`
+     * handler. A listener registered later in the same dispatch runs after
+     * that one, so seeking synchronously here is undone a microsecond later —
+     * the lesson silently restarts from zero every time.
+     */
+    requestAnimationFrame(() => {
+      if (element.duration > 0) element.currentTime = start;
+    });
+  }, []);
+
   const handleLoadedMetadata = useCallback(() => {
-    const seconds = player()?.duration ?? 0;
-    if (!Number.isFinite(seconds) || seconds <= 0) return;
+    const element = player();
+    const seconds = element?.duration ?? 0;
+    if (!element || !Number.isFinite(seconds) || seconds <= 0) return;
 
     setDuration(seconds);
     onDuration?.(seconds);
 
-    /*
-     * Resume only once the duration is known: `startTime` is applied by the
-     * element before metadata in some engines and silently dropped in others.
-     */
-    const start = Math.min(Math.max(0, startTimeSec), Math.max(0, seconds - 1));
-    const element = player();
+    // Resume only once the duration is known: seeking against an unknown length
+    // clamps to zero and silently loses the position.
+    applyResumePosition(element, seconds);
+  }, [applyResumePosition, onDuration, player]);
 
-    if (element && start > 0) element.currentTime = start;
-  }, [onDuration, player, startTimeSec]);
+  /*
+   * Metadata may already have loaded by the time the resume position arrives
+   * from storage, in which case `loadedmetadata` will not fire again.
+   */
+  useEffect(() => {
+    if (seekAppliedRef.current || startTimeSec <= 0) return;
+
+    const element = player();
+    const seconds = element?.duration ?? 0;
+    if (!element || !Number.isFinite(seconds) || seconds <= 0) return;
+
+    applyResumePosition(element, seconds);
+  }, [applyResumePosition, player, startTimeSec]);
 
   const handleTimeUpdate = useCallback(() => {
     const time = player()?.currentTime ?? 0;
@@ -452,6 +523,23 @@ export default function VideoPlayer(props: VideoPlayerProps) {
     toggleMute,
     togglePlay,
   ]);
+
+  /* Publish the transport handle once every command it wraps exists. */
+  useEffect(() => {
+    if (!controlsRef) return;
+
+    controlsRef.current = {
+      seekTo,
+      play: () => void player()?.play(),
+      pause: () => player()?.pause(),
+      toggleFullscreen,
+      getCurrentTime: () => player()?.currentTime ?? 0,
+    };
+
+    return () => {
+      controlsRef.current = null;
+    };
+  }, [controlsRef, player, seekTo, toggleFullscreen]);
 
   const poster = useMemo(
     () => posterUrl(lesson.playbackId, 2, 960, tokens?.thumbnail),

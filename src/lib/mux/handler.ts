@@ -66,15 +66,37 @@ export function isAllowedOrigin(request: Request): boolean {
   if (allowed === null) return true;
 
   const origin = hostOf(request.headers.get("origin"));
-  if (origin !== null) return origin === allowed;
+  if (origin !== null) return originMatches(origin, allowed);
 
   const referer = hostOf(request.headers.get("referer"));
-  if (referer !== null) return referer === allowed;
+  if (referer !== null) return originMatches(referer, allowed);
 
   // A same-origin browser request always sends `Origin` for POST, but a
   // same-origin GET may omit both headers. Treat that as allowed so status
   // polling is not broken; CORS still stops a foreign page from reading it.
   return true;
+}
+
+/**
+ * Loopback origins are interchangeable.
+ *
+ * `next build && next start` on a machine other than port 3000 would otherwise
+ * reject every Studio call — the app URL env var keeps its development default,
+ * but the server is genuinely local. A page served from `localhost` cannot be
+ * an attacker's page unless the attacker already runs on this machine, so the
+ * remaining risk is not the one this guard exists to stop.
+ */
+function originMatches(candidate: string, allowed: string): boolean {
+  if (candidate === allowed) return true;
+
+  // `candidate` and `allowed` are hosts (`localhost:3111`), not URLs, so the
+  // port is stripped here rather than through `isDevHost`, which takes a URL.
+  return isDevHostname(candidate) && isDevHostname(allowed);
+}
+
+/** `true` when a bare hostname is one of the loopback hosts. */
+export function isDevHostname(host: string): boolean {
+  return DEV_HOSTS.has(host.replace(/:\d+$/, "").toLowerCase());
 }
 
 /** Throw unless the request originates from this app. */

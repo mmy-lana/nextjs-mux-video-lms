@@ -28,6 +28,8 @@ export interface ContinueEntry {
   percent: number;
   /** Last known playhead, for the "pick up at" line. */
   positionSec: number;
+  /** Watched seconds so far, derived from the segment set. */
+  watchedSeconds: number;
   /** ISO timestamp of the last progress write; drives the ordering. */
   updatedAt: string;
 }

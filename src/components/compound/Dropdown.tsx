@@ -10,6 +10,7 @@
  */
 
 import {
+  Children,
   createContext,
   useCallback,
   useContext,
@@ -54,6 +55,7 @@ export function Dropdown({
   header,
 }: DropdownProps) {
   const [open, setOpen] = useState(false);
+  const [dropUp, setDropUp] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
@@ -97,6 +99,15 @@ export function Dropdown({
   }, [open]);
 
   const openAndFocus = (which: "first" | "last") => {
+    // Decide the direction before the menu has a height to measure: the
+    // remaining space below the trigger decides it.
+    const trigger = triggerRef.current;
+    const estimated = 56 * Math.max(1, Children.count(children));
+    const roomBelow = trigger
+      ? window.innerHeight - trigger.getBoundingClientRect().bottom
+      : window.innerHeight;
+
+    setDropUp(roomBelow < estimated + 16);
     setOpen(true);
 
     // The menu renders on this tick, so focus it on the next frame.
@@ -169,7 +180,14 @@ export function Dropdown({
             aria-label={label}
             onKeyDown={onMenuKeyDown}
             className={cn(
-              "absolute top-[calc(100%+0.5rem)] z-50 min-w-56 rounded-md border border-line bg-elevated p-1.5 shadow-[0_1px_0_rgb(255_255_255/0.06)_inset,0_32px_64px_-32px_rgb(0_0_0/0.95)]",
+              "absolute z-50 min-w-56 rounded-md border border-line bg-elevated p-1.5 shadow-[0_1px_0_rgb(255_255_255/0.06)_inset,0_32px_64px_-32px_rgb(0_0_0/0.95)]",
+              /*
+               * Flips above the trigger when the menu would not fit below.
+               * Without this, a menu opened near the foot of a list lands
+               * under the app's bottom navigation and its items become
+               * unclickable on a phone.
+               */
+              dropUp ? "bottom-[calc(100%+0.5rem)]" : "top-[calc(100%+0.5rem)]",
               align === "end" ? "right-0" : "left-0",
             )}
           >

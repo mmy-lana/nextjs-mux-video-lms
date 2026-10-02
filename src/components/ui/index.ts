@@ -8,8 +8,8 @@
 
 export { Badge, Chip, badgeVariants, chipVariants } from "./Badge";
 export type { BadgeProps, ChipProps } from "./Badge";
-export { Button, ButtonLabel, buttonVariants } from "./Button";
-export type { ButtonProps } from "./Button";
+export { Button, ButtonLabel, ButtonLink, buttonVariants } from "./Button";
+export type { ButtonLinkProps, ButtonProps } from "./Button";
 export {
   Checkbox,
   Field,

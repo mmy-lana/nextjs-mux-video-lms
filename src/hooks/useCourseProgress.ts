@@ -102,3 +102,76 @@ export function useCourseProgress(course: Course | null | undefined): UseCourseP
 function progressKeyToLessonId(key: string, courseId: string): string {
   return key.startsWith(`${courseId}:`) ? key.slice(courseId.length + 1) : key;
 }
+
+export interface CourseProgressSummary {
+  percent: number;
+  completedCount: number;
+  totalCount: number;
+  complete: boolean;
+}
+
+export interface UseCoursesProgressResult {
+  /** Keyed by course id. Only courses with progress are present. */
+  byCourse: Record<string, CourseProgressSummary>;
+  /** The raw store snapshot, for callers that need an individual record. */
+  progressMap: Record<string, LessonProgress>;
+  hydrated: boolean;
+}
+
+/**
+ * Progress for many courses at once.
+ *
+ * Hooks cannot be called from inside a loop, so a page that renders a grid of
+ * course cards cannot compose `useCourseProgress` per card. This subscribes to
+ * the store once and derives every summary in a single pass, which also means
+ * one render instead of one per card.
+ */
+export function useCoursesProgress(
+  courses: readonly Course[],
+): UseCoursesProgressResult {
+  const hydrated = useHydrated();
+
+  // A stable signature so the memo only re-derives when the catalog changes.
+  const signature = useMemo(() => courses.map((course) => `${course.id}:${course.modules.length}`).join("|"), [courses]);
+
+  const progressMap = useStore(progressStore, (snapshot) => snapshot);
+
+  const byCourse = useMemo(() => {
+    const out: Record<string, CourseProgressSummary> = {};
+
+    for (const course of courses) {
+      const map: Record<string, LessonProgress> = {};
+
+      for (const entry of flattenCourse(course)) {
+        const value = snapshot_for(progressMap, course.id, entry.lesson.id);
+        if (value) map[progressKey(course.id, entry.lesson.id)] = value;
+      }
+
+      const total = lessonCount(course);
+      if (total === 0) continue;
+
+      const completedCount = completedLessonCount(course, map);
+      out[course.id] = {
+        percent: Math.round((completedCount / total) * 100),
+        completedCount,
+        totalCount: total,
+        complete: completedCount === total,
+      };
+    }
+
+    return out;
+    // `signature` stands in for `courses` so an unstable array identity from the
+    // parent does not re-derive on every render.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [progressMap, signature]);
+
+  return useMemo(() => ({ byCourse, progressMap, hydrated }), [byCourse, hydrated, progressMap]);
+}
+
+function snapshot_for(
+  map: Record<string, LessonProgress>,
+  courseId: string,
+  lessonId: string,
+): LessonProgress | undefined {
+  return map[progressKey(courseId, lessonId)];
+}

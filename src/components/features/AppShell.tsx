@@ -220,9 +220,14 @@ export function AppShell({ children, profile = null, hideBottomNav = false }: Ap
             <Link
               href="/"
               aria-label="Aura home"
-              className="flex shrink-0 items-center gap-2 rounded-sm font-serif text-lg tracking-tight text-ink"
+              // 44px tall: the mark is 32px, but the hit area is what a finger
+              // needs, and the audit measures the link, not the glyph.
+              className="-ml-1 flex min-h-11 shrink-0 items-center gap-2 rounded-md px-1 font-serif text-lg tracking-tight text-ink transition-colors hover:text-gold focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gold"
             >
-              <span aria-hidden className="grid size-8 place-items-center rounded-md bg-gold text-sm font-bold text-gold-ink">
+              <span
+                aria-hidden
+                className="grid size-8 place-items-center rounded-md bg-gold text-sm font-bold text-gold-ink"
+              >
                 A
               </span>
               <span className="hidden sm:inline">Aura</span>

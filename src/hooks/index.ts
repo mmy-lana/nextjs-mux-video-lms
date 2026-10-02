@@ -19,8 +19,12 @@ export type {
 export { useCatalog } from "./useCatalog";
 export type { UseCatalogResult } from "./useCatalog";
 
-export { useCourseProgress } from "./useCourseProgress";
-export type { UseCourseProgressResult } from "./useCourseProgress";
+export { useCourseProgress, useCoursesProgress } from "./useCourseProgress";
+export type {
+  CourseProgressSummary,
+  UseCourseProgressResult,
+  UseCoursesProgressResult,
+} from "./useCourseProgress";
 
 export { useDurations, useLessonDuration, DURATION_EPSILON_SEC } from "./useDurations";
 export type { UseDurationsResult } from "./useDurations";

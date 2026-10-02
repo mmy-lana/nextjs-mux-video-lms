@@ -65,7 +65,7 @@ export type {
 } from "./Studio";
 
 export { default as VideoPlayer, PlayerSkeleton, describePlaybackError } from "./VideoPlayer";
-export type { VideoPlayerProps } from "./VideoPlayer";
+export type { VideoPlayerControls, VideoPlayerProps } from "./VideoPlayer";
 
 export {
   CertificateActions,

@@ -145,13 +145,17 @@ export function EnrollPanel({
     <>
       {layout === "sticky" ? (
         /*
-         * Mobile sticky bar. It sits above the bottom nav, which the course
-         * detail page suppresses so the two do not overlap.
+         * Mobile sticky bar.
+         *
+         * It is offset by the height of the app's bottom nav rather than
+         * sitting on top of it: at `bottom-0` the nav (z-50) covers this bar
+         * (z-40) and swallows every tap on the call to action — which is the
+         * one control that must work on a phone.
          */
         <div
           className={cn(
-            "fixed inset-x-0 bottom-0 z-40 border-t border-line bg-bg/95 px-4 pt-3 backdrop-blur-md md:hidden",
-            "pb-[max(0.75rem,env(safe-area-inset-bottom))]",
+            "fixed inset-x-0 z-40 border-t border-line bg-bg/95 px-4 pt-3 pb-3 backdrop-blur-md md:hidden",
+            "bottom-[calc(3.5rem+env(safe-area-inset-bottom))]",
             className,
           )}
         >
