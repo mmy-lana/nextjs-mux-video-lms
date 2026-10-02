@@ -1,11 +1,17 @@
 import type { Metadata, Viewport } from "next";
 import { Fraunces, Manrope } from "next/font/google";
+
 import "./globals.css";
 
+/**
+ * Fonts are loaded through `next/font` so they are self-hosted, preloaded and
+ * `font-display: swap` — no render-blocking request to a third party.
+ */
 const fraunces = Fraunces({
   subsets: ["latin"],
   variable: "--font-fraunces",
   display: "swap",
+  axes: ["SOFT", "WONK", "opsz"],
 });
 
 const manrope = Manrope({
@@ -15,32 +21,58 @@ const manrope = Manrope({
 });
 
 export const viewport: Viewport = {
-  themeColor: "#0B0B0D",
-  viewportFit: "cover",
   width: "device-width",
   initialScale: 1,
+  // `viewportFit: cover` lets the top bar and bottom nav reach into the notch
+  // area; they opt back in to the safe-area insets themselves.
+  viewportFit: "cover",
+  themeColor: "#0B0B0D",
+  colorScheme: "dark",
 };
 
 export const metadata: Metadata = {
-  title: "Aura LMS | Masterclass & Premium Video LMS",
-  description: "Cinematic video course platform powered by Mux.",
+  metadataBase: new URL(process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3000"),
+  title: {
+    default: "Aura — Cinematic Video Courses",
+    template: "%s · Aura",
+  },
+  description:
+    "Premium video courses with world-class instructors, streaming from Mux. Watch, resume, and earn a certificate.",
+  applicationName: "Aura",
+  openGraph: {
+    type: "website",
+    siteName: "Aura",
+    title: "Aura — Cinematic Video Courses",
+    description: "Premium video courses with world-class instructors, streaming from Mux.",
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: "Aura — Cinematic Video Courses",
+    description: "Premium video courses with world-class instructors, streaming from Mux.",
+  },
+  formatDetection: { telephone: false },
 };
 
-export default function RootLayout({
-  children,
-}: {
-  children: React.ReactNode;
-}) {
+export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="en" className={`${fraunces.variable} ${manrope.variable} dark`}>
-      <body className="min-h-dvh bg-[var(--color-bg)] text-[var(--color-ink)] antialiased font-sans">
-        <a
-          href="#main-content"
-          className="sr-only focus:not-sr-only focus:fixed focus:top-4 focus:left-4 focus:z-50 focus:px-4 focus:py-2 focus:bg-[var(--color-gold)] focus:text-[var(--color-gold-ink)] focus:rounded-md focus:font-semibold"
-        >
+    <html
+      lang="en"
+      dir="ltr"
+      className={`${fraunces.variable} ${manrope.variable}`}
+      data-theme="dark"
+    >
+      <body className="min-h-dvh bg-bg font-sans text-ink antialiased">
+        {/*
+          First tab stop on every page. `skip-link` keeps it off-screen until
+          focused, so it never disturbs the visual design.
+        */}
+        <a href="#main-content" className="skip-link bg-gold px-4 py-2.5 font-semibold text-gold-ink">
           Skip to main content
         </a>
-        <main id="main-content">{children}</main>
+
+        <div id="main-content" tabIndex={-1} className="outline-none">
+          {children}
+        </div>
       </body>
     </html>
   );

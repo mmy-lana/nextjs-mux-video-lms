@@ -13,3 +13,6 @@ repomix-output.xml
 .pnpm-store
 test-results
 playwright-report
+
+# Verification artifacts
+artifacts
