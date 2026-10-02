@@ -13,15 +13,14 @@ import "@testing-library/jest-dom/vitest";
 import { cleanup } from "@testing-library/react";
 import { afterEach, beforeEach, vi } from "vitest";
 
-import { clearMemoryFallback, resetStoreWarnings } from "@/lib/storage/createStore";
+import { clearMemoryFallback, resetAllStores, resetStoreWarnings } from "@/lib/storage/createStore";
 
 const hasDom = typeof window !== "undefined" && typeof window.localStorage !== "undefined";
 
 /*
- * jsdom has no `ResizeObserver`, and `Carousel` measures its track with one to
- * decide whether the prev/next buttons are needed. A no-op observer is enough:
- * the tests that care about the buttons assert their presence, and real
- * measurement belongs to the browser-side verification.
+ * jsdom implements neither `ResizeObserver` nor `matchMedia`, and both are read
+ * at module-evaluation time by libraries this app imports. Stubbing them here
+ * is what lets a component be tested without pulling in a real browser.
  */
 if (hasDom && typeof window.ResizeObserver === "undefined") {
   class ResizeObserverStub implements ResizeObserver {
@@ -34,9 +33,38 @@ if (hasDom && typeof window.ResizeObserver === "undefined") {
   globalThis.ResizeObserver = window.ResizeObserver;
 }
 
+if (hasDom && typeof window.matchMedia !== "function") {
+  window.matchMedia = ((query: string): MediaQueryList =>
+    ({
+      matches: false,
+      media: query,
+      onchange: null,
+      addEventListener: () => undefined,
+      removeEventListener: () => undefined,
+      addListener: () => undefined,
+      removeListener: () => undefined,
+      dispatchEvent: () => false,
+    }) as unknown as MediaQueryList) as typeof window.matchMedia;
+}
+
+/** jsdom has no media element playback, so the controls are stubbed. */
+if (hasDom && typeof window.HTMLMediaElement !== "undefined") {
+  Object.defineProperty(window.HTMLMediaElement.prototype, "play", {
+    configurable: true,
+    value: vi.fn().mockResolvedValue(undefined),
+  });
+  Object.defineProperty(window.HTMLMediaElement.prototype, "pause", {
+    configurable: true,
+    value: vi.fn(),
+  });
+}
+
 beforeEach(() => {
+  // Clearing `localStorage` is not enough: every store caches its last parsed
+  // value in module memory, so the caches have to be invalidated too.
   if (hasDom) window.localStorage.clear();
   clearMemoryFallback();
+  resetAllStores();
   resetStoreWarnings();
 });
 
@@ -47,5 +75,6 @@ afterEach(() => {
   }
 
   clearMemoryFallback();
+  resetAllStores();
   vi.useRealTimers();
 });

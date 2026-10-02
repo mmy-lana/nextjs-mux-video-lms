@@ -6,5 +6,6 @@
  * enter a client bundle. Server code imports those modules directly.
  */
 
+export * from "./client";
 export * from "./errors";
 export * from "./urls";

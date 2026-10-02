@@ -28,10 +28,15 @@ import {
 import type {
   ActivityDay,
   Course,
+  CourseCategory,
+  CourseLevel,
   Enrollment,
   LearnerProfile,
+  Lesson,
   LessonProgress,
+  Module,
   Note,
+  PlaybackPolicy,
   PlayerSettings,
   PlaybackRate,
   StudioUploadJob,
@@ -230,6 +235,19 @@ export const studioJobsStore: Store<Record<string, StudioUploadJob>> =
 /* Record factories                                                    */
 /* ------------------------------------------------------------------ */
 
+/** Fields the Studio form collects; the rest of the shape is derived. */
+export interface CreateStudioCourseInput {
+  slug: string;
+  title: string;
+  subtitle: string;
+  description: string;
+  instructorId: string;
+  category: CourseCategory;
+  level: CourseLevel;
+  tags: string[];
+  priceCents: number;
+}
+
 export function createEnrollment(courseId: string, now = new Date().toISOString()): Enrollment {
   return {
     id: uid("enrollment"),
@@ -296,6 +314,7 @@ export function createStudioUploadJob(
   moduleId: string,
   lessonTitle: string,
   muxUploadId: string,
+  policy: PlaybackPolicy = "public",
   now = new Date().toISOString(),
 ): StudioUploadJob {
   return {
@@ -309,6 +328,7 @@ export function createStudioUploadJob(
     durationSec: null,
     state: "uploading",
     errorMessage: null,
+    policy,
     createdAt: now,
     updatedAt: now,
   };
@@ -323,5 +343,86 @@ export function asPlaybackRate(value: number): PlaybackRate {
 
   return candidate.success ? candidate.data.playbackRate : DEFAULT_PLAYER_SETTINGS.playbackRate;
 }
+
+/**
+ * A new Studio course, always created as a draft.
+ *
+ * The draft is schema-valid from the moment it is written — a course that
+ * fails validation cannot be persisted at all — so it starts from a template
+ * the author replaces. `publishBlockers` is what stops a half-written template
+ * from reaching learners.
+ *
+ * The single empty lesson has no `playbackId`, which is exactly what keeps the
+ * course from being publishable until a real video is attached (plan §2.1).
+ */
+export function createStudioCourse(
+  input: CreateStudioCourseInput,
+  now = new Date().toISOString(),
+): Course {
+  const courseId = uid("course");
+  const moduleId = uid("module");
+
+  const lesson: Lesson = {
+    id: uid("lesson"),
+    title: "Untitled lesson",
+    summary: "",
+    order: 0,
+    playbackId: "",
+    playbackPolicy: "public",
+    muxAssetId: null,
+    durationSec: null,
+    isFreePreview: true,
+    resources: [],
+    createdAt: now,
+    updatedAt: now,
+  };
+
+  const module: Module = {
+    id: moduleId,
+    title: "Module 1",
+    order: 0,
+    lessons: [lesson],
+    createdAt: now,
+    updatedAt: now,
+  };
+
+  return {
+    id: courseId,
+    slug: input.slug,
+    title: input.title,
+    subtitle: input.subtitle,
+    description: input.description,
+    // Studio courses carry no instructor of their own; they reuse the first
+    // seed instructor so cards and rails still have a name to show.
+    instructorId: input.instructorId,
+    category: input.category,
+    level: input.level,
+    tags: [...input.tags],
+    // No hero until a lesson has a video; `heroPlaybackIdFor` fills the gap.
+    heroPlaybackId: "",
+    heroPolicy: "public",
+    heroPosterTimeSec: 2,
+    priceCents: input.priceCents,
+    learnOutcomes: [...DRAFT_OUTCOMES],
+    modules: [module],
+    status: "draft",
+    source: "studio",
+    featured: false,
+    createdAt: now,
+    updatedAt: now,
+  };
+}
+
+/**
+ * Placeholder outcomes for a new draft.
+ *
+ * Three entries, because that is the schema minimum; each one says plainly that
+ * it is a placeholder, so an author cannot publish one by accident.
+ */
+const DRAFT_OUTCOMES: readonly string[] = [
+  "Replace this outcome with something the learner can actually do",
+  "Replace this outcome with something the learner can actually do",
+  "Replace this outcome with something the learner can actually do",
+];
 
 export type { Store };

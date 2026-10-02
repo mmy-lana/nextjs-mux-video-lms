@@ -45,6 +45,29 @@ export {
 export type { AutoplayCountdownProps, NotesPanelProps } from "./NotesPanel";
 
 export {
+  attachedLessonIds,
+  LessonResources,
+  LessonUploader,
+  ModuleEditor,
+  PublishChecklist,
+  StudioCourseForm,
+  UploadJobList,
+  useSlugSuggestion,
+} from "./Studio";
+export type {
+  LessonResourcesProps,
+  LessonUploaderProps,
+  ModuleEditorProps,
+  PublishChecklistProps,
+  StudioCourseFormProps,
+  StudioCourseFormValues,
+  UploadJobListProps,
+} from "./Studio";
+
+export { default as VideoPlayer, PlayerSkeleton, describePlaybackError } from "./VideoPlayer";
+export type { VideoPlayerProps } from "./VideoPlayer";
+
+export {
   CertificateActions,
   CertificateView,
   InstructorCard,

@@ -121,7 +121,7 @@ export interface Lesson {
   title: string;              // 3–120 chars
   summary: string;            // 0–400 chars
   order: number;              // 0-based within module, contiguous
-  playbackId: string;         // Mux playback ID, 1–200 chars, [A-Za-z0-9]+
+  playbackId: string;         // Mux playback ID, 1–200 chars, [A-Za-z0-9]+; "" until a video is attached
   playbackPolicy: PlaybackPolicy;
   muxAssetId: string | null;  // present for studio uploads
   durationSec: number | null; // null = unknown until learned
@@ -150,7 +150,7 @@ export interface Course {
   category: CourseCategory;
   level: CourseLevel;
   tags: string[];             // 0–6 items, each 2–24 chars lowercase
-  heroPlaybackId: string;     // used for poster + trailer
+  heroPlaybackId: string;     // used for poster + trailer; falls back to the first lesson with a video
   heroPolicy: PlaybackPolicy;
   heroPosterTimeSec: number;  // >= 0, default 2
   priceCents: number;         // integer >= 0, 0 = free
@@ -230,6 +230,7 @@ export interface StudioUploadJob {
   durationSec: number | null;
   state: "uploading" | "processing" | "ready" | "errored";
   errorMessage: string | null;
+  policy: PlaybackPolicy;     // persisted so a job resumed after a refresh keeps its policy
   createdAt: ISODate;
   updatedAt: ISODate;
 }
@@ -249,6 +250,8 @@ export type ApiErrorCode =
 - A course may be `published` only if it has ≥ 1 module, every module has ≥ 1 lesson, and every lesson has a non-empty `playbackId`.
 - `LessonProgress.watchedSegments` is capped to `ceil(duration/10)`; on load, out-of-range indexes are dropped.
 - Every read from localStorage is parsed with its schema; invalid records are **dropped individually** (never crash the whole store) and a console warning is emitted once per key.
+
+> **Amendment (Phase 4).** `Lesson.playbackId` and `Course.heroPlaybackId` accept the empty string in the *stored* schema. §6.7.6 requires the Studio to keep text-only drafts — a course that cannot be persisted at all cannot be a draft — so the "1–200 chars" rule moved from storage-time validation to publish-time validation (`publishBlockers`). `heroPlaybackIdFor` resolves an unset hero from the first lesson that has a video, so a published course always has a real poster. `StudioUploadJob` gained a persisted `policy` field: a job resumed after a page refresh has to finish with the playback policy it was created with.
 
 ### 2.2 localStorage keys (prefix `lms.v1.`)
 

@@ -17,13 +17,13 @@ import { Button, IconButton } from "@/components/ui";
 import { Input, Textarea } from "@/components/ui/Field";
 import { Heading, Text, VisuallyHidden } from "@/components/ui/Layout";
 import { EmptyState } from "@/components/compound/States";
+import { MAX_NOTES_PER_LESSON, validateNoteBody } from "@/lib/domain/notes";
 import { prefersReducedMotion } from "@/lib/utils/a11y";
 import { cn } from "@/lib/utils/cn";
 import { formatClock, formatRelativeDate } from "@/lib/utils/time";
 import type { Note, PlayerSettings } from "@/lib/types";
 
-/** Plan §6.5: hard cap per lesson so storage stays bounded. */
-export const MAX_NOTES_PER_LESSON = 200;
+export { MAX_NOTES_PER_LESSON };
 
 export interface NotesPanelProps {
   notes: readonly Note[];
@@ -63,19 +63,10 @@ export function NotesPanel({
 
   const submit = () => {
     const body = draft.trim();
+    const validation = validateNoteBody(body, ordered.length >= MAX_NOTES_PER_LESSON);
 
-    if (body.length === 0) {
-      setError("Write something before saving.");
-      return;
-    }
-
-    if (body.length > 1000) {
-      setError(`That note is ${body.length} characters; the limit is 1000.`);
-      return;
-    }
-
-    if (ordered.length >= MAX_NOTES_PER_LESSON) {
-      setError(`This lesson already has ${MAX_NOTES_PER_LESSON} notes. Delete one to add another.`);
+    if (!validation.ok) {
+      setError(validation.message);
       return;
     }
 
@@ -91,14 +82,14 @@ export function NotesPanel({
   };
 
   const commitEdit = (note: Note) => {
-    const body = editBody.trim();
+    const validation = validateNoteBody(editBody, false);
 
-    if (body.length === 0) {
-      setError("A note cannot be empty.");
+    if (!validation.ok) {
+      setError(validation.message);
       return;
     }
 
-    onUpdate(note.id, body.slice(0, 1000));
+    onUpdate(note.id, editBody.trim());
     setEditingId(null);
     setError(null);
   };
@@ -260,8 +251,12 @@ export const AUTOPLAY_SECONDS = 5;
 export interface AutoplayCountdownProps {
   /** Next lesson title, for the announcement and the button. */
   nextLessonTitle: string;
+  /** The learner dismissed the countdown. */
   onCancel: () => void;
+  /** The learner asked to skip the wait. */
   onPlayNow: () => void;
+  /** The countdown ran out. Defaults to `onPlayNow`. */
+  onElapsed?: () => void;
   seconds?: number;
   className?: string;
 }
@@ -276,13 +271,20 @@ export function AutoplayCountdown({
   nextLessonTitle,
   onCancel,
   onPlayNow,
+  onElapsed,
   seconds = AUTOPLAY_SECONDS,
   className,
 }: AutoplayCountdownProps) {
   const [remaining, setRemaining] = useState(seconds);
   const [reduced, setReduced] = useState(false);
-  const onCancelRef = useRef(onCancel);
-  onCancelRef.current = onCancel;
+
+  // Reading through refs keeps the interval stable while the parent re-renders
+  // with new callbacks, so the countdown is never restarted mid-flight.
+  const onPlayNowRef = useRef(onPlayNow);
+  onPlayNowRef.current = onPlayNow;
+
+  const onElapsedRef = useRef(onElapsed);
+  onElapsedRef.current = onElapsed;
 
   useEffect(() => {
     setReduced(prefersReducedMotion());
@@ -295,7 +297,9 @@ export function AutoplayCountdown({
       setRemaining((current) => {
         if (current <= 1) {
           window.clearInterval(timer);
-          onCancelRef.current();
+          // "Elapsed" and "Play now" do the same thing; only "Cancel" differs,
+          // which is why they are separate props rather than one callback.
+          (onElapsedRef.current ?? onPlayNowRef.current)();
           return 0;
         }
         return current - 1;

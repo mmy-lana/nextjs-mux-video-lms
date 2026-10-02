@@ -103,6 +103,20 @@ export function resetStoreWarnings(): void {
   warnedKeys.clear();
 }
 
+/** Every store created in this module graph, so tests can reset them as a set. */
+const registry = new Set<Store<unknown>>();
+
+/**
+ * Invalidate every store's cache.
+ *
+ * Stores are module-level singletons, so clearing `localStorage` alone leaves
+ * each one holding the value it last parsed. That leaks state between tests;
+ * this is the seam that does not.
+ */
+export function resetAllStores(): void {
+  for (const store of registry) store.refresh();
+}
+
 /**
  * Resolve the storage area to use.
  *
@@ -333,6 +347,8 @@ export function createStore<T>(options: CreateStoreOptions<T>): Store<T> {
       notify();
     },
   };
+
+  registry.add(store as Store<unknown>);
 
   return store;
 }

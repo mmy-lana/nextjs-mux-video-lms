@@ -19,6 +19,10 @@ import { cn } from "@/lib/utils/cn";
 import { posterUrl, type PosterWidth } from "@/lib/mux/urls";
 
 export interface CoursePosterProps {
+  /**
+   * Empty means "no video yet" — a draft in the Studio. The gradient stands in
+   * rather than issuing a request that can only 404.
+   */
   playbackId: string;
   /** Frame to use, in seconds from the start of the asset. */
   timeSec?: number;
@@ -52,13 +56,20 @@ export function CoursePoster({
   overlay,
 }: CoursePosterProps) {
   const [state, setState] = useState<"loading" | "loaded" | "error">("loading");
-  const src = posterUrl(playbackId, timeSec, width, token);
+  const hasVideo = playbackId.trim().length > 0;
+
+  // No asset yet: fall back immediately instead of flashing a skeleton over a
+  // request that is certain to fail.
+  const effectiveState = hasVideo ? state : "error";
+  const src = hasVideo ? posterUrl(playbackId, timeSec, width, token) : null;
 
   return (
     <div className={cn("relative overflow-hidden bg-elevated", RATIO_CLASS[ratio], className)}>
-      {state === "loading" ? <Skeleton shape="block" className="absolute inset-0 size-full" /> : null}
+      {effectiveState === "loading" ? (
+        <Skeleton shape="block" className="absolute inset-0 size-full" />
+      ) : null}
 
-      {state !== "error" ? (
+      {effectiveState !== "error" && src !== null ? (
         <img
           src={src}
           alt={alt}
@@ -79,7 +90,7 @@ export function CoursePoster({
         A failed poster is not a failure of the page: the gradient keeps the
         card readable and the title is right there.
       */}
-      {state === "error" ? (
+      {effectiveState === "error" ? (
         <div
           aria-hidden
           className="absolute inset-0 bg-[radial-gradient(120%_120%_at_20%_10%,#2A2A31_0%,#131316_55%,#0B0B0D_100%)]"

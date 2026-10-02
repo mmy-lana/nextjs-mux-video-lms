@@ -67,6 +67,27 @@ export function freePreviewCount(course: Pick<Course, "modules">): number {
   return flattenCourse(course).filter((entry) => entry.lesson.isFreePreview).length;
 }
 
+/**
+ * The playback ID to use for a course's poster and trailer.
+ *
+ * A Studio draft may not have chosen a hero yet, so the first lesson that has a
+ * video stands in. That way a published course always has a real poster rather
+ * than a broken image, without making "pick a hero" a step the author can
+ * forget.
+ */
+export function heroPlaybackIdFor(
+  course: Pick<Course, "heroPlaybackId" | "modules">,
+): string | null {
+  const explicit = course.heroPlaybackId.trim();
+  if (explicit.length > 0) return explicit;
+
+  const first = flattenCourse(course).find(
+    (entry) => entry.lesson.playbackId.trim().length > 0,
+  );
+
+  return first?.lesson.playbackId.trim() || null;
+}
+
 /** Completed lessons and the course total, for "3 of 21 lessons" copy. */
 export function lessonProgressSummary(
   course: Pick<Course, "id" | "modules">,

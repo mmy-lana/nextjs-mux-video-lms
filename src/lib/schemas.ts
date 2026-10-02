@@ -21,8 +21,14 @@ import {
   type PlaybackRate,
 } from "./types";
 
-/** Mux playback IDs are opaque base62 identifiers. */
-const PLAYBACK_ID_PATTERN = /^[A-Za-z0-9]+$/;
+/**
+ * Mux playback IDs are opaque base62 identifiers.
+ *
+ * The empty string is allowed on *stored* course data — a Studio draft lesson
+ * or hero legitimately has no video yet — so the `min(1)` constraints that
+ * matter live on the API payloads and on the publish checklist instead.
+ */
+const PLAYBACK_ID_PATTERN = /^$|^[A-Za-z0-9]+$/;
 
 /** Kebab-case slugs, 3–80 chars, matching the generated shape. */
 const SLUG_PATTERN = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
@@ -93,9 +99,13 @@ export const lessonSchema = z.object({
   title: z.string().trim().min(3).max(120),
   summary: z.string().trim().max(400),
   order: z.number().int().min(0),
+  /*
+   * Empty means "no video attached yet", which is the normal state of a Studio
+   * draft lesson (plan §6.7.6). Publishing is what requires a real ID; see
+   * `publishBlockers`.
+   */
   playbackId: z
     .string()
-    .min(1)
     .max(200)
     .regex(PLAYBACK_ID_PATTERN, "Playback IDs may only contain letters and digits"),
   playbackPolicy: playbackPolicySchema,
@@ -132,9 +142,13 @@ export const courseSchema = z.object({
   tags: z
     .array(z.string().trim().min(2).max(24).regex(/^[a-z0-9][a-z0-9-]*$/, "Tags must be lowercase"))
     .max(6),
+  /*
+   * A draft may have no hero yet. An empty string is valid here and resolves at
+   * read time from the first lesson that has a video, so a course is never
+   * published without a poster (see `heroPlaybackIdFor`).
+   */
   heroPlaybackId: z
     .string()
-    .min(1)
     .max(200)
     .regex(PLAYBACK_ID_PATTERN, "Playback IDs may only contain letters and digits"),
   heroPolicy: playbackPolicySchema,
@@ -215,7 +229,11 @@ export const studioUploadJobSchema = z.object({
   playbackId: z.string().min(1).max(200).nullable(),
   durationSec: z.number().positive().finite().nullable(),
   state: z.enum(["uploading", "processing", "ready", "errored"]),
-  errorMessage: z.string().max(500).nullable(),  createdAt: ISO_DATE,
+  errorMessage: z.string().max(500).nullable(),
+  // Persisted because a job resumed after a refresh has to finish with the same
+  // playback policy the upload was created with.
+  policy: z.enum(["public", "signed"]),
+  createdAt: ISO_DATE,
   updatedAt: ISO_DATE,
 });
 

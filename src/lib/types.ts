@@ -207,6 +207,13 @@ export interface StudioUploadJob {
   durationSec: number | null;
   state: UploadJobState;
   errorMessage: string | null;
+  /**
+   * Playback policy the upload was created with.
+   *
+   * Persisted because a job resumed after a refresh has to finish with the same
+   * policy it started with; otherwise a signed asset could be published public.
+   */
+  policy: PlaybackPolicy;
   createdAt: ISODate;
   updatedAt: ISODate;
 }
