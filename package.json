@@ -1,0 +1,43 @@
+{
+  "name": "nextjs-mux-video-lms",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "lint": "next lint",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "dependencies": {
+    "next": "latest",
+    "react": "latest",
+    "react-dom": "latest",
+    "@mux/mux-player-react": "latest",
+    "@mux/mux-uploader-react": "latest",
+    "@mux/mux-node": "latest",
+    "zod": "latest",
+    "clsx": "latest",
+    "tailwind-merge": "latest",
+    "lucide-react": "latest"
+  },
+  "devDependencies": {
+    "typescript": "latest",
+    "@types/node": "latest",
+    "@types/react": "latest",
+    "@types/react-dom": "latest",
+    "tailwindcss": "latest",
+    "@tailwindcss/postcss": "latest",
+    "@tailwindcss/vite": "latest",
+    "postcss": "latest",
+    "vitest": "latest",
+    "vite": "latest",
+    "@testing-library/react": "latest",
+    "@testing-library/user-event": "latest",
+    "jsdom": "latest",
+    "@playwright/test": "latest",
+    "npm-check-updates": "latest"
+  }
+}

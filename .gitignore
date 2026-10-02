@@ -1,0 +1,12 @@
+node_modules
+.next
+out
+build
+dist
+.DS_Store
+*.local
+.env
+.env.production
+pnpm-debug.log*
+coverage
+repomix-output.xml
