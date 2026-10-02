@@ -10,3 +10,6 @@ dist
 pnpm-debug.log*
 coverage
 repomix-output.xml
+.pnpm-store
+test-results
+playwright-report
