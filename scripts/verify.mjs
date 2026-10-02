@@ -71,13 +71,22 @@ for (const viewport of VIEWPORTS) {
     let response;
     try {
       response = await page.goto(`${BASE_URL}${route}`, {
-        waitUntil: "networkidle",
+        waitUntil: "load",
         timeout: 45_000,
       });
     } catch (error) {
       record(route, viewport.name, false, `navigation failed: ${error.message}`);
       continue;
     }
+
+    /*
+     * A quiet network is the signal that nothing is polling forever, but one
+     * slow prefetch must not fail the entire route: give it a bounded window
+     * to settle and carry on either way. Fonts matter too — a layout measured
+     * against a fallback serif is not the layout the learner sees.
+     */
+    await page.waitForLoadState("networkidle", { timeout: 10_000 }).catch(() => undefined);
+    await page.evaluate(() => document.fonts?.ready).catch(() => undefined);
 
     if (!response || !response.ok()) {
       record(

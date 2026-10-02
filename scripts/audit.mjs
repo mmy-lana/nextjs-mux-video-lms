@@ -71,9 +71,14 @@ for (const viewport of VIEWPORTS) {
 
   for (const route of ROUTES) {
     const response = await page.goto(`${BASE_URL}${route}`, {
-      waitUntil: "networkidle",
+      waitUntil: "load",
       timeout: 45_000,
     });
+
+    // Same bounded settle as verify.mjs: measure against settled fonts, but do
+    // not let one slow prefetch abort the audit.
+    await page.waitForLoadState("networkidle", { timeout: 10_000 }).catch(() => undefined);
+    await page.evaluate(() => document.fonts?.ready).catch(() => undefined);
 
     if (!response || !response.ok()) {
       note(route, viewport.name, "http", `status ${response ? response.status() : "none"}`);

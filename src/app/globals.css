@@ -244,6 +244,17 @@
   }
 }
 
+/* Panel and dialog entry, used by Tabs, Sheet and Dialog. */
+@keyframes fade-in {
+  from {
+    opacity: 0;
+  }
+
+  to {
+    opacity: 1;
+  }
+}
+
 /*
  * Long curricula (50+ rows) skip layout and paint for off-screen lessons. The
  * `contain-intrinsic-size` keeps the scrollbar honest.
@@ -300,6 +311,51 @@
     width: max(100%, 44px);
     height: max(100%, 44px);
     transform: translate(-50%, -50%);
+  }
+}
+
+/* ------------------------------------------------------------------ */
+/* Print — certificates only                                          */
+/* ------------------------------------------------------------------ */
+
+@media print {
+  /*
+   * Hiding the shell rather than restyling it means a certificate prints as a
+   * single page with no masthead, no bottom nav and no controls.
+   */
+  header,
+  nav,
+  aside,
+  footer,
+  [data-print="hide"] {
+    display: none !important;
+  }
+
+  html,
+  body {
+    background: #ffffff !important;
+    color: #000000 !important;
+    min-height: auto;
+  }
+
+  .certificate {
+    border: 2px solid #000000 !important;
+    box-shadow: none !important;
+    background: #ffffff !important;
+    max-width: none;
+    page-break-inside: avoid;
+    break-inside: avoid;
+  }
+
+  .certificate h1,
+  .certificate h2,
+  .certificate p {
+    color: #000000 !important;
+  }
+
+  @page {
+    size: A4 landscape;
+    margin: 1.5cm;
   }
 }
 

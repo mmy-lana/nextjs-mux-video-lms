@@ -16,3 +16,7 @@ playwright-report
 
 # Verification artifacts
 artifacts
+
+# TypeScript incremental build state
+tsconfig.tsbuildinfo
+*.tsbuildinfo

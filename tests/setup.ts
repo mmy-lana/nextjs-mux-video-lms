@@ -17,6 +17,23 @@ import { clearMemoryFallback, resetStoreWarnings } from "@/lib/storage/createSto
 
 const hasDom = typeof window !== "undefined" && typeof window.localStorage !== "undefined";
 
+/*
+ * jsdom has no `ResizeObserver`, and `Carousel` measures its track with one to
+ * decide whether the prev/next buttons are needed. A no-op observer is enough:
+ * the tests that care about the buttons assert their presence, and real
+ * measurement belongs to the browser-side verification.
+ */
+if (hasDom && typeof window.ResizeObserver === "undefined") {
+  class ResizeObserverStub implements ResizeObserver {
+    observe(): void {}
+    unobserve(): void {}
+    disconnect(): void {}
+  }
+
+  window.ResizeObserver = ResizeObserverStub as unknown as typeof ResizeObserver;
+  globalThis.ResizeObserver = window.ResizeObserver;
+}
+
 beforeEach(() => {
   if (hasDom) window.localStorage.clear();
   clearMemoryFallback();
