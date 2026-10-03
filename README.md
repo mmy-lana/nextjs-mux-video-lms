@@ -1,246 +1,213 @@
-# Aura — a cinematic video-course LMS
+# Aura — Next.js Mux Video LMS
 
-A premium course platform built with Next.js (App Router), React 19 and TypeScript,
-streaming from [Mux](https://mux.com). Browse a catalog, enrol, watch with resume
-position and real progress tracking, take notes against timestamps, and earn a
-printable certificate — plus a Studio for authoring your own courses.
+A cinematic, production-grade video learning management system built with Next.js (App Router), React 19, TypeScript, Tailwind CSS, and Mux Video. Designed for immersive courses with seamless playback, scrub-proof progress tracking, interactive timestamped notes, student streak mechanics, printable certificates, and an integrated instructor authoring studio.
 
-The design brief this implements is [`plan.md`](./plan.md); it is the source of
-truth for architecture decisions and the responsive contract.
+- Live Application: https://nextjs-mux-video-lms.vercel.app
+- Source Repository: https://github.com/mmy-lana/nextjs-mux-video-lms
 
 ---
 
-## Quick start
+## Overview
 
-```bash
-pnpm install
-pnpm dev          # http://localhost:3000
-```
+Aura implements a complete course consumption and authoring workflow without external backend dependencies. It operates on a hybrid architecture: learner state (enrollments, progress, notes, settings, and local course drafts) persists in `localStorage` behind a reactive, SSR-safe store, while secure media workflows (direct uploads, asset polling, signed JWT tokens, and asset deletion) run through Next.js server-side Route Handlers.
 
-No configuration is required. The seed catalog ships with the build and streams
-from a public Mux demo asset, so the whole learner journey works immediately.
-
-To run against a production build:
-
-```bash
-pnpm build
-pnpm start        # http://localhost:3000
-```
+The application works out of the box with zero required environment variables using an open developer training video asset. Connecting Mux API credentials activates direct video uploads and signed asset delivery in the Instructor Studio.
 
 ---
 
-## The bundled video asset
+## Key Features
 
-The seed catalog streams an open developer training video so the project runs with
-zero configuration and without commercial movie trailer material. The asset streams
-from Mux's developer documentation CDN (`61zK4LlhV9P00tpGpsH7Fc00T58eR7m63b`), running
-100 seconds in widescreen 16:9.
+### Video Player & Learning Experience
+- Powered by `@mux/mux-player-react` loaded dynamically (`ssr: false`) to avoid hydration conflicts.
+- HLS adaptive bitrate streaming with automatic quality switching and low-latency playback.
+- Scrub-proof progress tracking: watches are measured in discrete 10-second segment sets rather than playhead maximums, preventing scrub exploitation.
+- Automatic resume calculation: restores saved playhead position upon returning to a lesson.
+- Interactive timestamped notes: click any note timestamp to seek the video; optional pause-while-typing mode.
+- Autoplay countdown overlay (5 seconds) with accessible live region announcements and static mode under `prefers-reduced-motion`.
+- Keyboard navigation shortcuts matching visible on-screen buttons (Space, K, J, L, Arrow keys, M, F, N, P).
+- System-level MediaSession API integration for native OS lock screen controls and metadata.
+- Printable completion certificates generated at `@media print` with landscape optimization.
 
-Its provenance is recorded in code (`seedAssetProvenance()`) and the Studio says
-so on load. Before deploying, set `NEXT_PUBLIC_SEED_PLAYBACK_ID` to an asset you
-own or are licensed to publish — for example a Creative Commons work you have
-uploaded to your own Mux account.
+### Instructor Studio
+- Complete course authoring: modules, lessons, summaries, price presets, and outcomes.
+- Visible Up/Down controls for curriculum reordering (no touch-hostile drag-and-drop).
+- Direct chunked video uploading via `@mux/mux-uploader-react` without exposing server secrets.
+- Automated client polling with exponential backoff (`2s -> 3s -> 5s -> 8s -> 10s`, capped at 15 minutes).
+- Pre-publish validation checklist preventing empty modules, missing videos, or disordered lessons.
+- Capability-secured asset deletion: asset removals require a cryptographically signed deletion token generated at upload time.
+- Cascading deletion engine: purging a course automatically cleans up associated Mux assets, local modules, enrollments, progress, notes, and duration caches.
 
-Verify any candidate before wiring it in:
-
-```bash
-pnpm run verify:playback -- <playback-id>
-```
-
-A playback ID answering `200` is not automatically usable as course material.
-Mux hosts short background-video loops as public assets, and a 9.8-second square
-clip would end before a learner could read the lesson title — silently breaking
-progress tracking, resume and the certificate flow. The verifier checks the
-manifest, the poster CDN, a minimum duration and the aspect ratio, and exits
-non-zero on failure.
-
-## Environment variables
-
-Everything has a working default. Set only what you need.
-
-| Name | Scope | Purpose |
-|------|-------|---------|
-| `MUX_TOKEN_ID` | server | Mux API access token ID. Enables Studio uploads. |
-| `MUX_TOKEN_SECRET` | server | Mux API secret. Enables Studio uploads. |
-| `MUX_SIGNING_KEY_ID` | server | Signing key ID. Enables signed playback. |
-| `MUX_PRIVATE_KEY` | server | Base64-encoded private key for signing JWTs. |
-| `NEXT_PUBLIC_APP_URL` | public | Page origin, used as `cors_origin` for direct uploads. |
-| `NEXT_PUBLIC_MUX_ENV_KEY` | public | Mux Data environment key. Optional. |
-| `NEXT_PUBLIC_SEED_PLAYBACK_ID` | public | Replaces the bundled demo asset for every seed course. See the section above. |
-
-**Without Mux credentials the app still does everything except upload.** The
-Studio detects this on load and says so; courses can be authored as text-only
-drafts and a known playback ID can be attached by hand. See `MuxNotConfigured`.
-
-Secrets are only ever read inside Route Handlers. There is no `NEXT_PUBLIC_`
-variable that carries a credential, and no Mux secret is present in any client
-bundle.
-
-### Route behaviour when credentials are missing
-
-Every Mux route returns `503` with `{ "error": { "code": "MUX_NOT_CONFIGURED" } }`.
-`GET /api/mux/upload` is the exception: it answers `{ configured, signing }` so
-the Studio can choose its mode before the author commits to anything.
+### Enterprise Security & Architecture
+- Strict Origin enforcement: blocks non-browser, cross-origin, or spoofed state-mutating requests (`POST`, `DELETE`, `PUT`, `PATCH`).
+- In-memory sliding-window token bucket rate limiter (20 requests/minute per client IP) with automatic TTL eviction.
+- Normalized IP extraction mitigating proxy header spoofing vulnerabilities.
+- Signed playback tokens: server-side JWT minting using RS256 private keys with explicit 2-hour expirations.
+- SSR-safe state synchronization: `useSyncExternalStore` integration with referentially stable client/server snapshot caching to prevent React hydration infinite loops.
 
 ---
 
-## Architecture
+## Tech Stack
 
-| Layer | Location | Rule |
-|-------|----------|------|
-| Types & schemas | `src/lib/types.ts`, `src/lib/schemas.ts` | Every entity is typed; every stored record is validated by zod. |
-| Storage | `src/lib/storage/` | One reactive store per `localStorage` key, behind `useSyncExternalStore`. |
-| Domain | `src/lib/domain/` | Pure functions: search, progress, resume, streak, ordering. No I/O. |
-| Mux | `src/lib/mux/` | `client.ts` is browser-safe; `server.ts`, `jwt.ts` and `handler.ts` are server-only. |
-| Primitives | `src/components/ui/` | Stateless, token-driven, `forwardRef` where it matters. |
-| Compounds | `src/components/compound/` | Behaviour only — keyboard, focus, scroll. Props in, no stores. |
-| Features | `src/components/features/` | Domain components. Props in, still no stores. |
-| Hooks | `src/hooks/`, `src/lib/storage/useStore.ts` | The only place storage is read. |
-
-Server Components own everything knowable ahead of time — course data, metadata,
-static params — and mount client islands only at the leaves that touch
-`localStorage`, the player, or a browser API.
-
-### Deleting a Mux asset
-
-`DELETE /api/mux/asset/[id]` is a live operation against an account this app
-does not own the credentials to, and it is not reversible from here. It
-therefore requires a **capability**: `POST /api/mux/upload` mints a random token
-when it creates an upload, remembers its digest, and returns it. Deleting an
-asset requires presenting the token issued for that asset, checked in constant
-time before any call reaches Mux.
-
-An asset id on its own authorises nothing. A capability issued for one asset
-cannot be replayed against another, and a caller who supplies neither is refused
-with `403 ASSET_NOT_OWNED`.
-
-The token is persisted on the job and on the lesson, because the delete happens
-long after the upload and possibly in a different session. The registry is
-in-memory and TTL-pruned, matching the rate limiter's documented best-effort
-caveat on serverless runtimes.
-
-### Where state lives, and why
-
-Learner state (profile, enrollments, progress, notes, settings, learned
-durations, activity, Studio courses and upload jobs) is in `localStorage` behind
-a typed store. Mux operations run in Route Handlers because a Mux secret can
-never reach a browser.
-
-**This is not access control.** Enrollment is a local record. Anyone with access
-to the browser's storage can edit it, and signed playback is demonstrated as a
-capability rather than presented as a security boundary. The checkout dialog says
-so in as many words, because a demo that pretends otherwise teaches the wrong
-thing.
-
-### Progress accounting
-
-Watched time is a **set of 10-second segment indexes**, not a maximum position,
-so scrubbing to the end credits one segment rather than the whole video. A tick
-more than 15 seconds from the last one is treated as a seek and credits nothing.
-Writes are throttled to one per 5 seconds and then force-flushed on pause, on
-`ended`, when the tab is hidden, on `pagehide` and on unmount — the five ways a
-learner actually leaves a lesson. Course completion is counted by lesson, not by
-watched seconds, because a lesson's duration is unknown until it has been played
-once.
+- Framework: Next.js (App Router, Server & Client Components)
+- UI Library: React 19
+- Language: TypeScript (Strict mode enabled)
+- Styling: Tailwind CSS v4 (CSS-first `@theme` design tokens)
+- Video Infrastructure: Mux (`@mux/mux-player-react`, `@mux/mux-uploader-react`, `@mux/mux-node`)
+- Schema Validation: Zod
+- Icons: Lucide React
+- Unit & Component Testing: Vitest, Testing Library, JSDOM
+- End-to-End Testing: Playwright (Headless Chromium matrix across 5 viewports)
 
 ---
 
-## Project layout
+## Architecture Decisions
+
+| Decision | Rationale |
+|----------|-----------|
+| Hybrid Persistence | Learner records live in `localStorage` via a reactive store. Mux direct uploads, status checks, and token minting execute in server Route Handlers to protect API secrets. |
+| Client Polling over Webhooks | Eliminates the requirement for an external database or public webhook endpoint; upload-to-asset readiness is resolved client-side with exponential backoff. |
+| Zero-Config Seed Catalog | Ships with a static typed catalog streaming verified educational demo assets, allowing immediate demonstration without API keys. |
+| Simulated Local Entitlement | Course enrollment and access control are local records. The platform demonstrates signed playback capabilities while maintaining clear transparency regarding client-side access simulation. |
+| Learned Duration Cache | Seed lessons begin with unknown durations (`durationSec: null`). The real duration is learned upon media load and cached, preventing invented runtimes. |
+| Strict Dark Palette | Cinematic dark theme (`--color-bg: #0B0B0D`, `--color-ink: #F4F1EA`, `--color-gold: #E3B04B`) with high-contrast type tokens (>= 4.5:1 ratio). |
+
+---
+
+## Directory Structure
 
 ```
 src/
-├─ app/                     routes, API handlers, global CSS
-│  └─ api/mux/              upload, upload/[id], asset/[id], token
-├─ components/
-│  ├─ ui/                   atoms
-│  ├─ compound/             molecules (Tabs, Accordion, Dialog, Sheet, Dropdown, Carousel)
-│  └─ features/             domain components and screen islands
-├─ hooks/                   stores in, reactive view models out
-├─ lib/
-│  ├─ domain/               pure functions
-│  ├─ mux/                  server client, JWT, URL builders, browser client
-│  ├─ seed/                 instructors and the six seed courses
-│  ├─ storage/              store factory, keys, migrations, concrete stores
-│  └─ utils/                cn, format, time, ids, a11y helpers
-└─ tests/                   unit, component and end-to-end suites
+├── app/
+│   ├── api/mux/
+│   │   ├── asset/[id]/route.ts       # GET status / DELETE asset (capability-verified)
+│   │   ├── token/route.ts            # POST mint signed JWT playback tokens
+│   │   └── upload/
+│   │       ├── [id]/route.ts         # GET upload polling status
+│   │       └── route.ts              # POST create direct upload & delete capability
+│   ├── certificate/[slug]/page.tsx   # Printable course certificate
+│   ├── courses/
+│   │   ├── [slug]/page.tsx           # Course landing page & curriculum breakdown
+│   │   └── page.tsx                  # Search, filter, and catalog grid
+│   ├── dev/primitives/page.tsx       # Design system verification bench
+│   ├── learn/[slug]/
+│   │   ├── [lessonId]/page.tsx       # Core video player & learning workspace
+│   │   └── page.tsx                  # Dynamic resume resolver route
+│   ├── my-learning/page.tsx          # Enrolled courses, streaks, and profile management
+│   ├── studio/
+│   │   ├── [courseId]/page.tsx       # Course curriculum editor & upload management
+│   │   └── page.tsx                  # Instructor dashboard & draft index
+│   ├── globals.css                   # Tailwind v4 theme tokens & base styles
+│   └── layout.tsx                    # Root layout, fonts, metadata, skip-link
+├── components/
+│   ├── compound/                     # Headless primitives (Accordion, Tabs, Dialog, Carousel)
+│   ├── features/                     # Domain modules (VideoPlayer, CatalogFilters, Studio)
+│   └── ui/                           # Base UI elements (Button, Input, Badge, Progress)
+├── hooks/                            # Reactive store hooks and playback engines
+├── lib/
+│   ├── domain/                       # Pure logic (progress math, catalog search, purge)
+│   ├── mux/                          # Server Mux client, JWT signing, URL builders
+│   ├── seed/                         # Seed instructors, courses, and playback fixtures
+│   ├── storage/                      # LocalStorage reactive store factory and migrations
+│   └── utils/                        # Formatting, IDs, accessibility, and math helpers
+scripts/
+├── audit.mjs                         # Playwright accessibility & touch target audit
+├── verify-playback.ts                # Standalone script to verify Mux playback assets
+└── verify.mjs                        # Responsive contract verification runner
+tests/
+├── component/                        # Component interaction & accessibility tests
+├── e2e/                              # Playwright user flows & responsive matrix tests
+└── unit/                             # Unit tests for domain math, schemas, and security
 ```
 
 ---
 
-## Verification
+## Getting Started
+
+### Prerequisites
+
+- Node.js 20.x or higher
+- pnpm 9.x or higher (Strictly enforced; do not use npm or yarn)
+
+### Installation
+
+1. Clone the repository:
+   ```bash
+   git clone https://github.com/mmy-lana/nextjs-mux-video-lms.git
+   cd nextjs-mux-video-lms
+   ```
+
+2. Install dependencies:
+   ```bash
+   pnpm install
+   ```
+
+3. Start the local development server:
+   ```bash
+   pnpm run dev
+   ```
+
+4. Open [http://localhost:3000](http://localhost:3000) in your browser.
+
+---
+
+## Environment Variables
+
+Copy `.env.example` to `.env.local` to configure production or custom Mux integration:
 
 ```bash
-pnpm run typecheck     # tsc --noEmit
-pnpm run test          # vitest: unit + component
-pnpm run build         # production build
-pnpm run verify        # all three, in order
-
-pnpm run test:e2e      # Playwright, against a production build
-pnpm run verify:responsive   # viewport matrix, 5 sizes x N routes, headless
-pnpm run audit               # touch targets, focus, landmarks, contrast
-pnpm run verify:playback -- <id>   # validate a replacement video asset
+cp .env.example .env.local
 ```
 
-The Playwright suite covers the full learner journey (browse → enrol → watch →
-resume → complete → certificate), reload persistence, cross-tab sync, the Studio
-draft flow, and the responsive contract at 360 / 390 / 430 / 768 / 1280.
-
-`scripts/verify.mjs` and `scripts/audit.mjs` drive a Playwright-managed headless
-Chromium in its own profile. They never attach to a browser you already have
-open.
-
-### What is actually verified
-
-Some things a type-checker cannot prove, so they are tested rather than asserted:
-
-- **Dialogs are clickable.** Every modal marks background content `inert`. The
-  overlay's own wrapper must *not* be marked — doing so removes the dialog from
-  hit-testing entirely. jsdom does not implement `inert`, so only the browser
-  suite catches a regression here.
-- **Nothing overflows horizontally** at any of the five viewports, on any route.
-- **Touch targets are at least 44 px**, inputs are at least 16 px (iOS zoom), and
-  every text token meets 4.5:1 against its real background.
-- **Resume actually resumes.** The progress engine refuses to write before the
-  player reports a duration, because the first tick arrives with a playhead of
-  zero and would otherwise overwrite the position the learner came back for.
+| Variable | Scope | Required | Purpose |
+|----------|-------|----------|---------|
+| `MUX_TOKEN_ID` | Server | Studio Only | Mux API access token ID for direct uploads. |
+| `MUX_TOKEN_SECRET` | Server | Studio Only | Mux API access token secret. |
+| `MUX_SIGNING_KEY_ID` | Server | Optional | Mux JWT signing key ID for signed playback. |
+| `MUX_PRIVATE_KEY` | Server | Optional | Base64-encoded RSA private key for JWT signing. |
+| `NEXT_PUBLIC_APP_URL` | Client/Server | Production | Canonical site URL (default: `http://localhost:3000`). Used for CORS verification. |
+| `NEXT_PUBLIC_MUX_ENV_KEY` | Client | Optional | Mux Data environment key for video viewer analytics. |
+| `NEXT_PUBLIC_SEED_PLAYBACK_ID` | Client | Optional | Custom Mux playback ID to override the default bundled seed asset. |
 
 ---
 
-## Accessibility
+## Verification & Testing
 
-Semantic landmarks with a skip link, `aria-current` in navigation, APG-conformant
-Tabs, Accordion, Dialog, Dropdown and Menu Button patterns, focus trapping with
-restoration, a live region for toasts and the autoplay countdown, and 44 px
-targets throughout.
+The repository contains an automated test and validation pipeline covering unit, component, responsive layout, and end-to-end integration boundaries:
 
-State is never conveyed by colour alone: a completed lesson shows a check icon
-*and* the word "Completed"; a locked one shows a lock *and* the word "Locked".
+```bash
+# Type check TypeScript without emitting files
+pnpm run typecheck
+
+# Run Vitest unit and component test suites
+pnpm run test
+
+# Run all verification steps (typecheck, tests, and production build)
+pnpm run verify
+
+# Verify that a custom Mux playback ID meets resolution, duration, and aspect ratio requirements
+pnpm run verify:playback -- <PLAYBACK_ID>
+
+# Run Playwright end-to-end tests against a production server
+pnpm run test:e2e
+
+# Run headless responsive matrix verification across 360px, 390px, 430px, 768px, and 1280px
+pnpm run verify:responsive
+
+# Run automated accessibility, touch target (>= 44px), and contrast audits
+pnpm run audit
+```
 
 ---
 
-Nothing is reachable only by hover, only by keyboard, or only by pointer. The
-player's shortcuts all have matching visible buttons; the curriculum reorders
-with explicit Up/Down controls rather than drag handles; the drop-down menus
-flip above their trigger when there is no room below.
+## Security Considerations
+
+- Secret Isolation: No Mux credentials or private keys are exposed to the client bundle. All privileged operations execute exclusively inside `server-only` Route Handlers.
+- State-Modifying Origin Enforcement: Requests attempting to write, delete, or sign tokens without a valid matching origin or referer are rejected immediately with `403 FORBIDDEN_ORIGIN`.
+- Capability-Based Asset Deletion: Direct upload creation issues a 256-bit cryptographically random capability token. `DELETE /api/mux/asset/[id]` requires this token via the `x-mux-delete-capability` header, preventing arbitrary asset purging on the upstream Mux account.
+- Rate Limiting: High-frequency poll and token endpoints are constrained by IP token buckets to prevent service degradation and denial-of-service attempts.
 
 ---
 
-## Known limitations
+## License
 
-- **Enrollment is local and simulated.** See above. This is the one thing a
-  reader should not mistake for a security boundary.
-- **No payment processing.** Paid checkout is a dialog that says it processes
-  nothing.
-- **No webhooks.** Upload → asset readiness is resolved by client polling on a
-  fixed 2s/3s/5s/8s schedule, capped at 10s and abandoned after 15 minutes.
-- **Rate limiting is best-effort.** The Mux routes use an in-memory token
-  bucket per IP; on a serverless runtime that is one bucket per warm instance,
-  so it is a brake against a runaway poll loop rather than a control.
-- **Lesson durations start unknown.** Seed lessons carry `durationSec: null` and
-  the UI shows `—` until the player reports the real duration. No number is ever
-  invented to fill the gap.
-- **Chromium only.** The Playwright projects run Chromium at a desktop and a
-  mobile viewport. WebKit and Firefox would re-prove the same CSS at twice the
-  runtime.
-- **The bundled asset is not licensed for redistribution.** It makes the project
-  run out of the box; it is not a content choice. See the section above.
+This project is licensed under the MIT License.
