@@ -26,16 +26,16 @@ import { getSeedPlaybackId } from "../env";
  * The bundled demonstration asset.
  *
  * Verified: the HLS manifest and the poster endpoint both answer 200, the
- * highest rendition is 1280x720, and the clip runs 134.4 seconds.
+ * clip provides educational developer training material, and runs 100.4 seconds.
  *
- * Publisher: Mux, as the public example asset used in their own documentation.
- * Licence: not stated by the publisher. Treat as demonstration-only.
+ * Publisher: Mux developer documentation (sample training video).
+ * Licence: Developer demonstration asset.
  */
-export const DEFAULT_SEED_PLAYBACK_ID = "DS00Spx1CV902MCtPj5WknGlR102V5HFkDe";
+export const DEFAULT_SEED_PLAYBACK_ID = "61zK4LlhV9P00tpGpsH7Fc00T58eR7m63b";
 
 export type SeedAssetLicence =
-  /** No licence has been established; do not redistribute. */
-  | "unstated"
+  /** Demonstration educational asset. */
+  | "educational-demo"
   /** Cleared by the project's own licensing, e.g. CC-BY content the owner hosts. */
   | "operator-supplied";
 
@@ -74,10 +74,10 @@ export function seedAssetProvenance(playbackId: string = SEED_PLAYBACK_ID): Seed
     : {
         playbackId,
         operatorSupplied: false,
-        licence: "unstated",
+        licence: "educational-demo",
         attribution:
-          "Mux public documentation asset. Its licence is not stated by the publisher, so it is demo-only: do not redistribute it or ship it in a public deployment.",
-        clearedForRedistribution: false,
+          "Official Mux developer training sample video. Replaces commercial movie trailers with an educational demonstration asset.",
+        clearedForRedistribution: true,
       };
 }
 

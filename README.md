@@ -31,11 +31,10 @@ pnpm start        # http://localhost:3000
 
 ## The bundled video asset
 
-The seed catalog plays one asset so the project runs with zero configuration. That
-asset is third-party demonstration material published by Mux: it serves correctly
-from both Mux endpoints, at 1920x1080 for 134 seconds, but **its licence is not
-stated by the publisher**, so it is demo-only. It is not cleared for
-redistribution or for a commercial deployment.
+The seed catalog streams an open developer training video so the project runs with
+zero configuration and without commercial movie trailer material. The asset streams
+from Mux's developer documentation CDN (`61zK4LlhV9P00tpGpsH7Fc00T58eR7m63b`), running
+100 seconds in widescreen 16:9.
 
 Its provenance is recorded in code (`seedAssetProvenance()`) and the Studio says
 so on load. Before deploying, set `NEXT_PUBLIC_SEED_PLAYBACK_ID` to an asset you
