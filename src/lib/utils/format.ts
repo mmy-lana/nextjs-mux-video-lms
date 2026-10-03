@@ -10,15 +10,30 @@ import { UNKNOWN_DURATION } from "./time";
 const integerFormatter = new Intl.NumberFormat("en-US", { maximumFractionDigits: 0 });
 
 /**
- * Cents → `$149` / `$1,249`. `0` renders as `Free`, which is what every
- * catalog surface and CTA actually needs.
+ * Cents → `$149` / `$1,249` / `$149.95`.
+ *
+ * Two decimals appear only when the amount actually has them. `Math.round`
+ * would turn 149.99 into "150" and 100.49 into "100", so a price could read as
+ * a different amount from the one charged — and 1 cent rounds to "$0" on a
+ * non-free course, which is worse.
  */
 export function formatPrice(priceCents: number): string {
   if (!Number.isFinite(priceCents) || priceCents < 0) return UNKNOWN_DURATION;
   if (priceCents === 0) return "Free";
 
   const dollars = priceCents / 100;
-  return `$${integerFormatter.format(Math.round(dollars))}`;
+  const hasFraction = priceCents % 100 !== 0;
+
+  const formatter = hasFraction
+    ? new Intl.NumberFormat("en-US", {
+        style: "currency",
+        currency: "USD",
+        minimumFractionDigits: 2,
+        maximumFractionDigits: 2,
+      })
+    : integerFormatter;
+
+  return hasFraction ? formatter.format(dollars) : `$${integerFormatter.format(dollars)}`;
 }
 
 /** Cents → `$149.00` for checkout and receipt copy. */

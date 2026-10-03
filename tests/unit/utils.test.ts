@@ -102,6 +102,31 @@ describe("format", () => {
     expect(formatPrice(-1)).toBe(UNKNOWN_DURATION);
   });
 
+  it("does not round a fractional price into a different amount", () => {
+    // Rounding changed what the learner was told they would pay:
+    // 149.99 became "150", and 100.49 became "100".
+    expect(formatPrice(14995)).toBe("$149.95");
+    expect(formatPrice(14999)).toBe("$149.99");
+    expect(formatPrice(10049)).toBe("$100.49");
+    expect(formatPrice(10050)).toBe("$100.50");
+    expect(formatPrice(1)).toBe("$0.01");
+    expect(formatPrice(99)).toBe("$0.99");
+
+    // One cent must not collapse to "$0" on a non-free course.
+    expect(formatPrice(1)).not.toBe("$0");
+    expect(formatPrice(1)).not.toBe("Free");
+
+    // Whole amounts still read as whole, not "$149.00".
+    expect(formatPrice(14900)).not.toContain(".");
+    expect(formatPrice(14995)).toContain(".");
+  });
+
+  it("keeps fractional prices exact and free prices free", () => {
+    expect(formatPriceExact(14995)).toBe("$149.95");
+    expect(formatPriceExact(0)).toBe("Free");
+    expect(formatPriceExact(-1)).toBe(UNKNOWN_DURATION);
+  });
+
   it("formats counts and labels", () => {
     expect(formatCount(1284)).toBe("1,284");
     expect(formatLevel("intermediate")).toBe("Intermediate");

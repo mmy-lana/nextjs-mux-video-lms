@@ -6,8 +6,9 @@
  * so orphaned video does not accumulate in the owner's account.
  */
 
-import { NotFoundError, UpstreamError } from "@/lib/mux/errors";
+import { AssetNotOwnedError, NotFoundError, UpstreamError } from "@/lib/mux/errors";
 import { withMuxParamsHandler } from "@/lib/mux/handler";
+import { verifyDeleteCapability } from "@/lib/mux/registry";
 import { getMuxClient } from "@/lib/mux/server";
 import { muxIdParamSchema } from "@/lib/schemas";
 import type { AssetStatus, AssetStatusResponse, DeleteAssetResponse } from "@/lib/types";
@@ -37,6 +38,14 @@ function assetErrorMessage(errors: unknown): string | null {
 function toDurationSec(duration: number | undefined): number | null {
   if (typeof duration !== "number" || !Number.isFinite(duration) || duration <= 0) return null;
   return Math.round(duration);
+}
+
+/** Header carrying the capability issued when the upload was created. */
+export const DELETE_CAPABILITY_HEADER = "x-mux-delete-capability";
+
+/** Read the capability from a request, tolerating a missing header. */
+function readCapability(request: Request): string | null {
+  return request.headers.get(DELETE_CAPABILITY_HEADER);
 }
 
 /** `true` for Mux's 404 and the SDK's own not-found error. */
@@ -73,22 +82,37 @@ export const GET = withMuxParamsHandler(muxIdParamSchema, async ({ id }) => {
   return { data: body };
 });
 
-export const DELETE = withMuxParamsHandler(muxIdParamSchema, async ({ id }) => {
-  const mux = getMuxClient();
-
-  try {
-    await mux.video.assets.delete(id);
-  } catch (cause) {
-    // An asset that is already gone is the desired end state, so a 404 is a
-    // success here rather than an error.
-    if (isNotFound(cause)) {
-      const alreadyGone: DeleteAssetResponse = { deleted: true };
-      return { data: alreadyGone };
+export const DELETE = withMuxParamsHandler(
+  muxIdParamSchema,
+  async ({ id }, request) => {
+    /*
+     * Authorisation first, before any Mux call.
+     *
+     * Without this the endpoint accepts any syntactically valid asset id and
+     * deletes it, so anyone who can reach the app could destroy material in the
+     * owner's Mux account that this app never created. A delete is not
+     * recoverable from a master copy the operator may not have.
+     */
+    if (!verifyDeleteCapability(id, readCapability(request))) {
+      throw new AssetNotOwnedError();
     }
 
-    throw new UpstreamError("Could not delete the Mux asset.", cause);
-  }
+    const mux = getMuxClient();
 
-  const body: DeleteAssetResponse = { deleted: true };
-  return { data: body };
-});
+    try {
+      await mux.video.assets.delete(id);
+    } catch (cause) {
+      // An asset that is already gone is the desired end state, so a 404 is a
+      // success here rather than an error.
+      if (isNotFound(cause)) {
+        const alreadyGone: DeleteAssetResponse = { deleted: true };
+        return { data: alreadyGone };
+      }
+
+      throw new UpstreamError("Could not delete the Mux asset.", cause);
+    }
+
+    const body: DeleteAssetResponse = { deleted: true };
+    return { data: body };
+  },
+);

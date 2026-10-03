@@ -12,7 +12,7 @@
  */
 
 import Link from "next/link";
-import { useMemo } from "react";
+import { useEffect, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import { Award, CheckCircle2, Lock, Sparkles } from "lucide-react";
 
@@ -78,6 +78,17 @@ export function CourseDetail({ slug, course: seedCourse, instructor: seedInstruc
     () => (course ? courses.filter((entry) => entry.id !== course.id).slice(0, 6) : []),
     [course, courses],
   );
+
+  /*
+   * The server cannot see a Studio course, so its metadata is a neutral
+   * placeholder. Once the client resolves the real record, the title should
+   * match what is on screen rather than contradicting it.
+   */
+  useEffect(() => {
+    if (!course) return;
+
+    document.title = `${course.title} · ${course.subtitle}`;
+  }, [course]);
 
   /* Unknown slug, and nothing in this browser to match it. */
   if (hydrated && !course) {

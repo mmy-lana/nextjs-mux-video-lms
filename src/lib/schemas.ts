@@ -108,6 +108,12 @@ export const lessonSchema = z.object({
     .string()
     .max(200)
     .regex(PLAYBACK_ID_PATTERN, "Playback IDs may only contain letters and digits"),
+  // Hex token of variable length, or absent for a lesson with no upload.
+  muxDeleteToken: z
+    .string()
+    .max(128)
+    .regex(/^[a-f0-9]+$/, "Delete capabilities are lowercase hexadecimal")
+    .nullable(),
   playbackPolicy: playbackPolicySchema,
   muxAssetId: z.string().min(1).max(200).nullable(),
   durationSec: z.number().positive().finite().nullable(),
@@ -233,6 +239,13 @@ export const studioUploadJobSchema = z.object({
   // Persisted because a job resumed after a refresh has to finish with the same
   // playback policy the upload was created with.
   policy: z.enum(["public", "signed"]),
+  // Persisted because the delete happens long after the upload, possibly in a
+  // different session, and the capability cannot be reissued.
+  deleteToken: z
+    .string()
+    .max(128)
+    .regex(/^[a-f0-9]+$/, "Delete capabilities are lowercase hexadecimal")
+    .nullable(),
   createdAt: ISO_DATE,
   updatedAt: ISO_DATE,
 });

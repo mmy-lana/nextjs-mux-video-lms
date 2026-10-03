@@ -51,6 +51,22 @@ export class ForbiddenOriginError extends MuxRouteError {
   }
 }
 
+/**
+ * The caller did not present the capability issued for this asset.
+ *
+ * The origin check passed; what failed is proof that the asset belongs to this
+ * deployment. Kept distinct from `FORBIDDEN_ORIGIN` so a client can tell "you
+ * are not allowed to be here" apart from "that asset is not yours to delete".
+ */
+export class AssetNotOwnedError extends MuxRouteError {
+  constructor(
+    message = "This asset was not created by this deployment. Provide the capability issued with its upload.",
+  ) {
+    super(403, "ASSET_NOT_OWNED", message);
+    this.name = "AssetNotOwnedError";
+  }
+}
+
 /** The request body or params failed schema validation. */
 export class ValidationError extends MuxRouteError {
   readonly issues: ReadonlyArray<{ path: string; message: string }>;

@@ -315,6 +315,7 @@ export function createStudioUploadJob(
   lessonTitle: string,
   muxUploadId: string,
   policy: PlaybackPolicy = "public",
+  deleteToken: string | null = null,
   now = new Date().toISOString(),
 ): StudioUploadJob {
   return {
@@ -329,6 +330,7 @@ export function createStudioUploadJob(
     state: "uploading",
     errorMessage: null,
     policy,
+    deleteToken,
     createdAt: now,
     updatedAt: now,
   };
@@ -370,6 +372,7 @@ export function createStudioCourse(
     playbackId: "",
     playbackPolicy: "public",
     muxAssetId: null,
+    muxDeleteToken: null,
     durationSec: null,
     isFreePreview: true,
     resources: [],

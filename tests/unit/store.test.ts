@@ -128,9 +128,13 @@ describe("createStore cache identity", () => {
     expect(counterStore.get()).toEqual({ count: 42 });
   });
 
-  it("ignores a storage event for a different key", () => {
+  it("ignores a storage event for a different key while subscribed", () => {
     const counterStore = makeCounterStore();
-    // Prime the cache, then change storage behind the store's back.
+
+    // Subscribing is what attaches the window listeners; only then is the
+    // cache authoritative between notifications.
+    const unsubscribe = counterStore.subscribe(() => undefined);
+
     expect(counterStore.get()).toEqual({ count: 0 });
     window.localStorage.setItem(STORAGE_KEYS.durations, JSON.stringify({ count: 42 }));
 
@@ -138,6 +142,24 @@ describe("createStore cache identity", () => {
 
     // Still the cached value: the event named someone else's key.
     expect(counterStore.get()).toEqual({ count: 0 });
+    unsubscribe();
+  });
+
+  it("re-derives an unsubscribed store from storage, since nothing can notify it", () => {
+    const counterStore = makeCounterStore();
+
+    // No subscriber, so no listener is attached (PERF-01). A change made by
+    // another tab still has to be visible on the next read, which is why the
+    // raw payload is compared rather than trusting the cache.
+    expect(counterStore.get()).toEqual({ count: 0 });
+    expect(counterStore.isListening).toBe(false);
+
+    window.localStorage.setItem(STORAGE_KEYS.durations, JSON.stringify({ count: 42 }));
+
+    expect(counterStore.get()).toEqual({ count: 42 });
+    // Unchanged payload, unchanged reference: identity still holds.
+    const first = counterStore.get();
+    expect(counterStore.get()).toBe(first);
   });
 
   it("treats a cleared area (key === null) as invalidation", () => {

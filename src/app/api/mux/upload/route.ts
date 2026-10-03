@@ -14,6 +14,7 @@ import { getAppUrl } from "@/lib/env";
 import { isMuxSigningConfigured, isMuxServerConfigured } from "@/lib/env";
 import { UpstreamError } from "@/lib/mux/errors";
 import { withMuxHandler } from "@/lib/mux/handler";
+import { issueDeleteCapability } from "@/lib/mux/registry";
 import { getMuxClient } from "@/lib/mux/server";
 import { createUploadRequestSchema } from "@/lib/schemas";
 import type { CreateUploadResponse, MuxStatusResponse } from "@/lib/types";
@@ -48,6 +49,17 @@ export const POST = withMuxHandler(createUploadRequestSchema, async ({ policy })
     throw new UpstreamError("Mux did not return an upload URL.");
   }
 
-  const body: CreateUploadResponse = { uploadId: upload.id, url: upload.url };
+  /*
+   * Mint the delete capability here, where this deployment is provably the
+   * party that created the upload. `DELETE /api/mux/asset/[id]` will only accept
+   * this token, which is what stops the endpoint from being a general-purpose
+   * "delete anything in the Mux account" primitive.
+   */
+  const body: CreateUploadResponse = {
+    uploadId: upload.id,
+    url: upload.url,
+    deleteToken: issueDeleteCapability(upload.id),
+  };
+
   return { data: body, status: 201 };
 });

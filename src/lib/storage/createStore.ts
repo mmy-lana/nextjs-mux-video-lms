@@ -38,6 +38,10 @@ export interface Store<T> {
   refresh(): void;
   /** The key this store owns. */
   readonly key: StorageKey;
+  /** Live subscribers. The window listeners are attached only while this is > 0. */
+  readonly subscriberCount: number;
+  /** `true` while the window listeners are attached. Test seam and diagnostics. */
+  readonly isListening: boolean;
 }
 
 export type Updater<T> = T | ((prev: T) => T);
@@ -234,8 +238,44 @@ export function createStore<T>(options: CreateStoreOptions<T>): Store<T> {
   let cache: T | undefined;
   let attached = false;
 
+  /*
+   * The raw payload the cache was built from.
+   *
+   * An unsubscribed store has no notification path, so it cannot know that
+   * another tab changed the value. Keeping the raw string lets `get()` detect
+   * that with one comparison, which keeps the promise that an unsubscribed read
+   * still sees cross-tab writes without attaching a window listener per store
+   * for the lifetime of the page.
+   */
+  let cachedRaw: string | null = null;
+
   const notify = (): void => {
     for (const listener of [...listeners]) listener();
+  };
+
+  /*
+   * Listener lifetime.
+   *
+   * The window listeners exist only to tell this store that something else
+   * changed the value. Once nothing is subscribed, nothing can be told, so
+   * holding them costs a closure and a notification per store write for every
+   * store in the module — for the lifetime of the tab. Detaching on the last
+   * unsubscribe makes the cost proportional to what is actually mounted.
+   */
+  const detach = (): void => {
+    if (!attached) return;
+
+    attached = false;
+    window.removeEventListener("storage", handleStorageEvent);
+    window.removeEventListener(STORE_EVENT, handleStoreEvent);
+  };
+
+  const attachIfNeeded = (): void => {
+    if (attached || typeof window === "undefined") return;
+    attached = true;
+
+    window.addEventListener("storage", handleStorageEvent);
+    window.addEventListener(STORE_EVENT, handleStoreEvent);
   };
 
   const handleStorageEvent = (event: StorageEvent): void => {
@@ -243,6 +283,7 @@ export function createStore<T>(options: CreateStoreOptions<T>): Store<T> {
     if (event.key !== null && event.key !== options.key) return;
 
     cache = undefined;
+    cachedRaw = null;
     notify();
   };
 
@@ -253,15 +294,8 @@ export function createStore<T>(options: CreateStoreOptions<T>): Store<T> {
     if (detail.source === source) return;
 
     cache = undefined;
+    cachedRaw = null;
     notify();
-  };
-
-  const attach = (): void => {
-    if (attached || typeof window === "undefined") return;
-    attached = true;
-
-    window.addEventListener("storage", handleStorageEvent);
-    window.addEventListener(STORE_EVENT, handleStoreEvent);
   };
 
   const persist = (next: T): boolean => {
@@ -285,15 +319,24 @@ export function createStore<T>(options: CreateStoreOptions<T>): Store<T> {
     key: options.key,
 
     get(): T {
-      if (cache !== undefined) return cache;
+      /*
+       * While nothing is subscribed there is no event to tell us the value
+       * moved, so the raw payload is compared instead. An unchanged payload
+       * keeps the cached reference, which is what the identity contract and
+       * `useSyncExternalStore` both depend on.
+       */
+      if (cache !== undefined && attached) return cache;
 
       const raw = readRaw(options.key);
+
+      if (cache !== undefined && !attached && raw === cachedRaw) return cache;
+
       const { value, changed } = parsePayload(raw, options);
 
       if (changed && raw !== null) persist(value);
 
       cache = value;
-      attach();
+      cachedRaw = raw;
       options.onHydrate?.(value);
 
       return cache;
@@ -315,8 +358,8 @@ export function createStore<T>(options: CreateStoreOptions<T>): Store<T> {
 
       // Store exactly what was validated so readers never see unvalidated data.
       cache = result.data;
+      cachedRaw = readRaw(options.key);
       persist(cache);
-      attach();
 
       if (typeof window !== "undefined") {
         window.dispatchEvent(
@@ -331,11 +374,24 @@ export function createStore<T>(options: CreateStoreOptions<T>): Store<T> {
 
     subscribe(cb: () => void): () => void {
       listeners.add(cb);
-      attach();
+      // Only while someone is listening; a `get()` alone does not need the
+      // cross-tab wiring, because it reads the cache it already holds.
+      if (listeners.size === 1) attachIfNeeded();
 
       return () => {
         listeners.delete(cb);
+        if (listeners.size === 0) detach();
       };
+    },
+
+    /** Current subscriber count; exposed so the detach can be asserted. */
+    get subscriberCount(): number {
+      return listeners.size;
+    },
+
+    /** `true` while window listeners are attached. Test seam and diagnostics. */
+    get isListening(): boolean {
+      return attached;
     },
 
     getServerSnapshot(): T {
@@ -344,6 +400,7 @@ export function createStore<T>(options: CreateStoreOptions<T>): Store<T> {
 
     refresh(): void {
       cache = undefined;
+      cachedRaw = null;
       notify();
     },
   };

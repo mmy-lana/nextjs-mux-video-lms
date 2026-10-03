@@ -12,7 +12,7 @@
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { BookOpen, Plus, Trash2 } from "lucide-react";
+import { BookOpen, CircleAlert, Plus, Trash2 } from "lucide-react";
 
 import { CoursePoster } from "@/components/features/CoursePoster";
 import { MuxNotConfigured } from "@/components/features/Panels";
@@ -30,8 +30,10 @@ import { Dialog, OverlayBody, OverlayFooter, OverlayHeader } from "@/components/
 import { EmptyState } from "@/components/compound/States";
 import { useHydrated, useStudioCourses, useUploadJobs } from "@/hooks";
 import { fetchMuxStatus } from "@/lib/mux/client";
+import { describePurge, purgeStudioCourse } from "@/lib/domain/purge";
 import { heroPlaybackIdFor } from "@/lib/domain/totals";
 import { formatRelativeDate } from "@/lib/utils/time";
+import { seedAssetProvenance } from "@/lib/seed/playback";
 import type { Course } from "@/lib/types";
 
 const EMPTY_FORM: StudioCourseFormValues = {
@@ -49,7 +51,7 @@ export default function StudioPage() {
   const hydrated = useHydrated();
   const router = useRouter();
   const { toast } = useToast();
-  const { courses, drafts, published, createDraft, remove } = useStudioCourses();
+  const { courses, drafts, published, createDraft } = useStudioCourses();
   const uploadJobs = useUploadJobs();
 
   const [creating, setCreating] = useState(false);
@@ -82,6 +84,24 @@ export default function StudioPage() {
   }, []);
 
   useEffect(() => probe(), [probe]);
+
+  /**
+   * Deleting a course cascades: its lessons, enrollments, progress, notes,
+   * learned durations and upload jobs all go with it, and its Mux assets are
+   * deleted first while their capabilities are still available.
+   */
+  const removeCourse = async (course: Course): Promise<void> => {
+    const report = await purgeStudioCourse(course.id);
+
+    toast({
+      title: "Course deleted",
+      description: describePurge(report),
+      tone: report.assetsFailed > 0 ? "danger" : "success",
+      duration: report.assetsFailed > 0 ? 0 : 5_000,
+    });
+
+    router.push("/studio");
+  };
 
   if (!hydrated) {
     return (
@@ -165,6 +185,8 @@ export default function StudioPage() {
 
       {mux !== null && !mux.configured ? <MuxNotConfigured /> : null}
 
+      <SeedAssetNotice />
+
       {activeJobs.length > 0 ? (
         <UploadJobList
           jobs={activeJobs}
@@ -194,10 +216,7 @@ export default function StudioPage() {
               description="Visible in your catalog."
               courses={published}
               onOpen={(id) => router.push(`/studio/${id}`)}
-              onDelete={(course) => {
-                remove(course.id);
-                toast({ title: "Course deleted", description: course.title });
-              }}
+              onDelete={(course) => void removeCourse(course)}
             />
           ) : null}
 
@@ -207,10 +226,7 @@ export default function StudioPage() {
               description="Only you can see these."
               courses={drafts}
               onOpen={(id) => router.push(`/studio/${id}`)}
-              onDelete={(course) => {
-                remove(course.id);
-                toast({ title: "Draft deleted", description: course.title });
-              }}
+              onDelete={(course) => void removeCourse(course)}
             />
           ) : null}
         </div>
@@ -236,6 +252,46 @@ export default function StudioPage() {
         </OverlayFooter>
       </Dialog>
     </Container>
+  );
+}
+
+/* ------------------------------------------------------------------ */
+/* Seed asset provenance                                               */
+/* ------------------------------------------------------------------ */
+
+/**
+ * Who may use the asset the seed catalog plays.
+ *
+ * This sits in the Studio rather than in a comment because an author is about
+ * to publish something built on top of it. The bundled asset is third-party
+ * demonstration material: it works, but its licence is not stated by the
+ * publisher, so it is demo-only until the operator supplies their own.
+ */
+function SeedAssetNotice() {
+  const provenance = seedAssetProvenance();
+
+  if (provenance.clearedForRedistribution) return null;
+
+  return (
+    <section
+      aria-label="Seed video asset"
+      className="flex flex-col gap-2 rounded-lg border border-gold/35 bg-surface p-4"
+    >
+      <div className="flex items-center gap-2">
+        <CircleAlert aria-hidden className="size-4 shrink-0 text-gold" />
+        <h2 className="text-sm font-semibold text-ink">The bundled video asset is demo-only</h2>
+      </div>
+
+      <Text size="sm" tone="muted">
+        {provenance.attribution}
+      </Text>
+
+      <Text size="sm" tone="muted">
+        Set <code className="text-gold">NEXT_PUBLIC_SEED_PLAYBACK_ID</code> to an asset you own or
+        are licensed to publish before deploying, then confirm it with{" "}
+        <code className="text-gold">pnpm run verify:playback -- {"<id>"}</code>.
+      </Text>
+    </section>
   );
 }
 

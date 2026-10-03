@@ -9,7 +9,7 @@
  * deleted lesson leaves behind.
  */
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { ArrowLeft, ExternalLink } from "lucide-react";
 
@@ -37,15 +37,21 @@ import {
   useStudioCourse,
   useTakenSlugs,
   useUploadJobs,
+  type ReadyLessonPayload,
   type UseUploadJobsResult,
 } from "@/hooks";
 import { fetchMuxStatus, deleteMuxAsset } from "@/lib/mux/client";
 import { heroPlaybackIdFor } from "@/lib/domain/totals";
 import { normalizeOrder } from "@/lib/domain/curriculum";
-import { notesStore } from "@/lib/storage/stores";
-import { durationsStore } from "@/lib/storage/stores";
-import { progressStore } from "@/lib/storage/stores";
-import type { Course, Lesson, Module } from "@/lib/types";
+import {
+  durationsStore,
+  enrollmentsStore,
+  notesStore,
+  progressStore,
+  studioCoursesStore,
+  studioJobsStore,
+} from "@/lib/storage/stores";
+import type { Course, Lesson, Module, StudioUploadJob } from "@/lib/types";
 
 export function StudioCourseEditor({ courseId }: { courseId: string }) {
   const hydrated = useHydrated();
@@ -68,43 +74,55 @@ export function StudioCourseEditor({ courseId }: { courseId: string }) {
   /*
    * Upload jobs. `onReady` attaches a finished asset to the lesson the job was
    * started from, which is why `LessonUploader` is rendered per lesson.
+   *
+   * The course is read from the store inside the callback rather than closed
+   * over. A job finishes asynchronously, and the closure captured at the time
+   * the hook was created can be several edits behind the live record, so saving
+   * from it would silently discard every change made while the upload ran.
    */
   const attachLesson = useCallback(
-    (job: { moduleId: string; lessonTitle: string; playbackId: string | null; muxAssetId: string | null; durationSec: number | null; policy: "public" | "signed" }) => {
-      const current = course;
-      if (!current || !job.playbackId) return;
+    (job: StudioUploadJob, payload: ReadyLessonPayload) => {
+      const { moduleId, lessonTitle } = job;
+      if (!payload.playbackId) return;
+
+      const live = studioCoursesStore.get()[courseId];
+      if (!live) return;
 
       let attached = false;
 
-      save({
-        ...current,
-        modules: current.modules.map((module) => {
-          if (module.id !== job.moduleId) return module;
+      const next: Course = {
+        ...live,
+        modules: live.modules.map((module) => {
+          if (module.id !== moduleId) return module;
 
           const lessons = module.lessons.map((lesson) => {
             // Match by title: a job started before a rename should still land on
             // the row the author was looking at.
-            if (lesson.playbackId !== "" || lesson.title !== job.lessonTitle) return lesson;
+            if (lesson.playbackId !== "" || lesson.title !== lessonTitle) return lesson;
             if (attached) return lesson;
 
             attached = true;
             return {
               ...lesson,
-              playbackId: job.playbackId as string,
-              muxAssetId: job.muxAssetId,
-              durationSec: job.durationSec,
-              playbackPolicy: job.policy,
+              playbackId: payload.playbackId,
+              muxAssetId: payload.muxAssetId,
+              muxDeleteToken: payload.deleteToken,
+              durationSec: payload.durationSec,
+              playbackPolicy: payload.policy,
               updatedAt: new Date().toISOString(),
             };
           });
 
           return { ...module, lessons: normalizeOrder(lessons) };
         }),
-      });
+        updatedAt: new Date().toISOString(),
+      };
 
-      if (attached) toast({ title: "Video attached", description: job.lessonTitle, tone: "success" });
+      save(next);
+
+      if (attached) toast({ title: "Video attached", description: lessonTitle, tone: "success" });
     },
-    [course, save, toast],
+    [courseId, save, toast],
   );
 
   const uploadJobs = useUploadJobs({ onReady: attachLesson });
@@ -267,7 +285,7 @@ export function StudioCourseEditor({ courseId }: { courseId: string }) {
     });
 
     // Best effort: a failure here leaves an orphan in Mux, not a broken course.
-    if (lesson.muxAssetId) void deleteMuxAsset(lesson.muxAssetId);
+    if (lesson.muxAssetId) void deleteMuxAsset(lesson.muxAssetId, lesson.muxDeleteToken);
 
     setDeletingLesson(null);
     toast({ title: "Lesson deleted", description: lesson.title });
@@ -442,6 +460,11 @@ export function StudioCourseEditor({ courseId }: { courseId: string }) {
  * It asks for a direct-upload URL, hands it to Mux Uploader, and reports the
  * bytes landing. Polling from `ended` onwards belongs to `useUploadJobs`, which
  * survives a page refresh.
+ *
+ * The job id is captured at `begin()` and held in a ref, so the completion
+ * callback names the job it actually started. Guessing it from the store by
+ * title and timestamp is a race: two uploads in one module, or a retried
+ * request, would advance whichever record happened to sort first.
  */
 function LessonUploaderSlot({
   courseId,
@@ -460,6 +483,13 @@ function LessonUploaderSlot({
   jobs: UseUploadJobsResult;
   onFailed: (message: string) => void;
 }) {
+  const jobIdRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    // A different lesson means any captured id belongs to the previous upload.
+    jobIdRef.current = null;
+  }, [lessonTitle]);
+
   if (!moduleId) return null;
 
   // A lesson that already has a video shows its state instead of an uploader;
@@ -476,25 +506,23 @@ function LessonUploaderSlot({
   return (
     <LessonUploader
       disabled={disabled}
-      /** Nothing to upload to once a video is attached. */
       onRequestUpload={async () => {
-        const { url } = await jobs.begin({
+        const { job, url } = await jobs.begin({
           courseId,
           moduleId,
           lessonTitle,
           policy: "public",
         });
+
+        jobIdRef.current = job.id;
         return url;
       }}
       onUploaded={() => {
-        // The job id is not known here, so the newest uploading job for this
-        // module is the one that just finished sending bytes.
-        const job = jobs
-          .jobsForCourse(courseId)
-          .filter((entry) => entry.moduleId === moduleId && entry.state === "uploading")
-          .sort((a, b) => b.createdAt.localeCompare(a.createdAt))[0];
+        const jobId = jobIdRef.current;
+        if (jobId === null) return;
 
-        if (job) jobs.markUploaded(job.id);
+        jobs.markUploaded(jobId);
+        jobIdRef.current = null;
       }}
       onFailed={onFailed}
     />

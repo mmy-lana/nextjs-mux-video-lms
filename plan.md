@@ -252,6 +252,8 @@ export type ApiErrorCode =
 - Every read from localStorage is parsed with its schema; invalid records are **dropped individually** (never crash the whole store) and a console warning is emitted once per key.
 
 > **Amendment (Phase 4).** `Lesson.playbackId` and `Course.heroPlaybackId` accept the empty string in the *stored* schema. §6.7.6 requires the Studio to keep text-only drafts — a course that cannot be persisted at all cannot be a draft — so the "1–200 chars" rule moved from storage-time validation to publish-time validation (`publishBlockers`). `heroPlaybackIdFor` resolves an unset hero from the first lesson that has a video, so a published course always has a real poster. `StudioUploadJob` gained a persisted `policy` field: a job resumed after a page refresh has to finish with the playback policy it was created with.
+>
+> **Amendment (security pass).** `Lesson` gained `muxDeleteToken` and `StudioUploadJob` gained `deleteToken`, both nullable. The learner state lives in `localStorage`, so the server has no record of what the Studio owns; a delete capability issued at upload time is what makes `DELETE /api/mux/asset/[id]` safe (see §14). `ApiErrorCode` gained `ASSET_NOT_OWNED` — a 403 for a failed capability check, kept distinct from `FORBIDDEN_ORIGIN` because the origin was fine and the proof was not. `CreateUploadResponse` gained `deleteToken`.
 
 ### 2.2 localStorage keys (prefix `lms.v1.`)
 
@@ -304,18 +306,18 @@ Domain hooks built on this (Phase 4): `useProfile`, `useEnrollment(courseId)`, `
 `lib/mux/server.ts` — lazily constructs the `@mux/mux-node` client from env; throws a typed `MuxNotConfiguredError` that handlers map to `503`.
 
 Common handler pipeline (`lib/mux/handler.ts`):
-1. **Origin check:** reject if `Origin`/`Referer` host differs from `NEXT_PUBLIC_APP_URL` host (allow `localhost` in development) → `403 FORBIDDEN_ORIGIN`.
+1. **Origin check:** reject if the `Origin`/`Referer` host differs from the `NEXT_PUBLIC_APP_URL` host (loopback hosts are interchangeable) → `403 FORBIDDEN_ORIGIN`. A `POST`/`PUT`/`PATCH`/`DELETE` carrying neither header is also rejected: there is nothing left to check the caller against, and a read may still fall through, since a same-origin `GET` legitimately omits both.
 2. **Validate** body/params with zod → `400 VALIDATION_FAILED`.
-3. **Rate limit:** in-memory token bucket per IP (20 req/min). Documented as best-effort on serverless.
+3. **Rate limit:** in-memory token bucket per IP (20 req/min). Documented as best-effort on serverless. The bucket map is swept on every use — entries that have refilled and gone idle are dropped, and a hard ceiling on distinct tracked clients bounds the rest. The client key is taken from the first syntactically valid address in `X-Forwarded-For`; an unparseable value collapses to one shared bucket rather than to a caller-chosen string.
 4. Execute Mux call; map Mux SDK errors to `502 UPSTREAM_FAILED` without leaking secrets.
 5. All responses `Cache-Control: no-store`.
 
 | Route | Method | Request | Response | Behavior |
 |-------|--------|---------|----------|----------|
-| `/api/mux/upload` | POST | `{ policy: "public"\|"signed" }` | `{ uploadId, url }` | Create direct upload with `cors_origin = NEXT_PUBLIC_APP_URL` and new-asset playback policy from request. |
+| `/api/mux/upload` | POST | `{ policy: "public"\|"signed" }` | `{ uploadId, url, deleteToken }` | Create direct upload with `cors_origin = NEXT_PUBLIC_APP_URL` and new-asset playback policy from request. `deleteToken` is the capability that authorises deleting the resulting asset. `GET` on the same path returns `{ configured, signing }` so the Studio can choose its mode up front. |
 | `/api/mux/upload/[id]` | GET | — | `{ status, assetId \| null, errorMessage \| null }` | `context: { params: Promise<{ id: string }> }`. Maps Mux upload status (`waiting`, `asset_created`, `errored`, `cancelled`, `timed_out`). Must `await context.params`. |
 | `/api/mux/asset/[id]` | GET | — | `{ status: "preparing"\|"ready"\|"errored", playbackId \| null, durationSec \| null, errorMessage \| null }` | `context: { params: Promise<{ id: string }> }`. Reads asset; picks first playback ID. Must `await context.params`. |
-| `/api/mux/asset/[id]` | DELETE | — | `{ deleted: true }` | `context: { params: Promise<{ id: string }> }`. Removes asset via SDK; ignores 404 upstream. Must `await context.params`. |
+| `/api/mux/asset/[id]` | DELETE | — | `{ deleted: true }` | `context: { params: Promise<{ id: string }> }`. Requires `x-mux-delete-capability` carrying the token issued by `POST /api/mux/upload` for this asset; anything else is `403 ASSET_NOT_OWNED` and Mux is never called. Ignores 404 upstream. Must `await context.params`. |
 | `/api/mux/token` | POST | `{ playbackId }` | `{ playback, thumbnail, storyboard }` | Signs three JWTs (video, thumbnail, storyboard), 2-hour expiry. `MUX_PRIVATE_KEY` must be decoded via `Buffer.from(key, 'base64').toString('ascii')` prior to signing. |
 
 Mux URL helpers (`lib/mux/urls.ts`, pure): `posterUrl(playbackId, timeSec, width)` → `https://image.mux.com/{id}/thumbnail.webp?time=…&width=…`; `streamUrl(playbackId)`. `next.config` must allow `image.mux.com` under `images.remotePatterns` (verify current config key naming at build time).
@@ -582,6 +584,28 @@ Exit criteria: full learner journey (browse → enroll → watch → resume → 
 
 ---
 
+## 11a. Security and Data-Integrity Pass
+
+Defects found by the architectural audit, and how each is closed.
+
+| # | Defect | Resolution |
+|---|--------|-----------|
+| SEC-01 | `DELETE /api/mux/asset/[id]` accepted any syntactically valid asset id, so anyone who could reach the app could destroy any asset in the owner's Mux account. | A capability is minted by `POST /api/mux/upload`, stored by digest in a TTL-pruned server registry, and required on delete. An asset id alone authorises nothing; the capability is checked before any Mux call, in constant time. `ASSET_NOT_OWNED` distinguishes "not yours" from "not allowed here". |
+| SEC-02 | Origin validation accepted a write that carried neither `Origin` nor `Referer`, which is exactly what a non-browser caller looks like. | `POST`/`PUT`/`PATCH`/`DELETE` without origin evidence are rejected. A read still falls through, because a same-origin `GET` may legitimately omit both headers. |
+| SEC-03 | The rate-limit map grew one entry per distinct client key forever, and `X-Forwarded-For` was trusted verbatim — so a caller rotating a spoofed value both bypassed the limiter and grew the map without limit. | Buckets are swept on every use: entries that have refilled and gone idle are dropped, with a hard ceiling on tracked clients as a second bound. The client key is the first syntactically valid address; an unparseable value collapses to one shared bucket. |
+| DATA-01 | `attachLesson` saved from a closure captured when the hook was created, silently discarding every edit made while an upload was running. | The course is read from the live store inside the callback and the merged record written back. |
+| DATA-02 | Deleting a Studio course left its enrollments, progress, notes, learned durations and upload jobs behind. | `purgeStudioCourse` removes the remote assets first, while their capabilities are still available, then every local record keyed to the course. A failed remote delete still removes the course locally and reports the orphan. |
+| DATA-03 | An allocating selector applied to the server snapshot returned a fresh object per call — the documented cause of React's `getServerSnapshot should be cached` infinite-loop error. | The server snapshot path is memoised on its input reference, in a cache separate from the client's, so it cannot hand the client the empty default. |
+| DATA-04 | Token lifetime was left to the SDK default, which need not match the `expiresAt` the client schedules its refresh from. | `expiresIn: TOKEN_TTL_SEC` is passed explicitly on all three tokens, and `type` is set on each so the single-token overload is selected. |
+| DATA-05 | The uploader guessed which job it had started by sorting the store by title and timestamp. | The job id returned by `begin()` is held in a ref and reported verbatim. |
+| DATA-06 | `formatPrice` rounded to whole dollars, so 149.99 read as "150" and 1 cent read as "$0". | Two decimals appear only when the amount has them. |
+| PERF-01 | Every store that had ever been read kept a `storage` and `lms:store` listener for the life of the page. | Listeners attach on first subscribe and detach on last. An unsubscribed store stays correct by comparing the raw payload on read, so it still sees cross-tab writes without a listener. |
+| UI-01 | `pb-20` cleared the mobile bottom nav only where the safe-area inset was zero, so the last row of a long page sat underneath it on a device with a home indicator. | Padding is the bar's own height plus the inset. |
+| UI-02 | `querySelector("mux-player")` ran on every `timeupdate`, roughly four times a second, for the life of the page. | The element reference is cached per stage and invalidated on re-mount. |
+| SEO-01 | `generateMetadata` returned "Course not found" for any slug the server could not resolve, including Studio courses that exist only in the browser. | A neutral title, and the client sets the real one once it resolves. |
+
+---
+
 ## 12. Known Risks & Mitigations (pre-empting the adversarial audit)
 
 | Risk | Mitigation |
@@ -596,5 +620,6 @@ Exit criteria: full learner journey (browse → enroll → watch → resume → 
 | Large Mux Player bundle | Lazy entry / `next/dynamic`; Player mounted only on Player and trailer surfaces. |
 | Upload polling runaway | Backoff cap + 15-minute timeout + job state persisted. |
 | localStorage quota | Prune activity, retry, toast; all writes try/catch. |
-| API shape drift (Next.js, Tailwind, Mux) | "Verify against current docs" rule at every phase start; no version pinning. |
+| API shape drift (Next.js, Tailwind, Mux) | "Verify against current docs" rule at every phase start; no version pinning. Mux's `signPlaybackId` takes `expiresIn`, not `expiration`; checked against the installed SDK rather than assumed. |
+| Third-party demo asset shipped in anger | The bundled asset's licence status is recorded in code, surfaced in the Studio, and replaced by an operator-supplied one via `NEXT_PUBLIC_SEED_PLAYBACK_ID`. `verify:playback` refuses an asset too short or the wrong shape for the player. |
 | Drag-and-drop on touch | Not used; reorder via explicit Up/Down controls. |

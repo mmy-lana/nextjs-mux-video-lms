@@ -71,6 +71,13 @@ export interface Lesson {
   playbackPolicy: PlaybackPolicy;
   /** Present for studio uploads. */
   muxAssetId: string | null;
+  /**
+   * Capability issued with the asset's upload, required to delete it.
+   *
+   * Stored beside the asset id because the two are only meaningful together: an
+   * asset id on its own authorises nothing.
+   */
+  muxDeleteToken: string | null;
   /** `null` until the real duration is learned from the player (see D5). */
   durationSec: number | null;
   isFreePreview: boolean;
@@ -214,6 +221,13 @@ export interface StudioUploadJob {
    * policy it started with; otherwise a signed asset could be published public.
    */
   policy: PlaybackPolicy;
+  /**
+   * Capability issued with the upload, required to delete the asset.
+   *
+   * Persisted because the delete happens long after the upload, possibly in a
+   * different session, and the capability cannot be reissued.
+   */
+  deleteToken: string | null;
   createdAt: ISODate;
   updatedAt: ISODate;
 }
@@ -222,6 +236,12 @@ export type ApiErrorCode =
   | "MUX_NOT_CONFIGURED"
   | "VALIDATION_FAILED"
   | "FORBIDDEN_ORIGIN"
+  /**
+   * The caller could not prove it owns the remote asset it asked to mutate.
+   * Separate from `FORBIDDEN_ORIGIN` because the origin was fine: the
+   * capability was missing or wrong.
+   */
+  | "ASSET_NOT_OWNED"
   | "NOT_FOUND"
   | "UPSTREAM_FAILED"
   | "RATE_LIMITED";
@@ -241,6 +261,13 @@ export interface CreateUploadRequest {
 export interface CreateUploadResponse {
   uploadId: string;
   url: string;
+  /**
+   * Capability proving this deployment created the upload.
+   *
+   * `DELETE /api/mux/asset/[id]` requires it. Persist it alongside the asset id
+   * on the lesson, because an asset id on its own authorises nothing.
+   */
+  deleteToken: string;
 }
 
 /**

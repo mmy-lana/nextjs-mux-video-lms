@@ -11,6 +11,11 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { MuxNotConfiguredError } from "@/lib/mux/errors";
 import { resetRateLimits } from "@/lib/mux/handler";
+import {
+  bindAssetToUpload,
+  issueDeleteCapability,
+  resetRegistry,
+} from "@/lib/mux/registry";
 
 const uploadCreate = vi.fn();
 const uploadRetrieve = vi.fn();
@@ -69,6 +74,7 @@ beforeEach(() => {
 afterEach(() => {
   vi.clearAllMocks();
   vi.unstubAllEnvs();
+  resetRegistry();
 });
 
 /* ------------------------------------------------------------------ */
@@ -84,10 +90,17 @@ describe("POST /api/mux/upload", () => {
     }));
 
     expect(response.status).toBe(201);
-    await expect(response.json()).resolves.toEqual({
-      uploadId: "upl_1",
-      url: "https://storage.googleapis.com/x",
-    });
+
+    const body = (await response.json()) as {
+      uploadId: string;
+      url: string;
+      deleteToken: string;
+    };
+
+    expect(body.uploadId).toBe("upl_1");
+    expect(body.url).toBe("https://storage.googleapis.com/x");
+    // A fresh 256-bit capability per upload; without it nothing can be deleted.
+    expect(body.deleteToken).toMatch(/^[a-f0-9]{64}$/);
 
     expect(uploadCreate).toHaveBeenCalledWith({
       cors_origin: "http://localhost:3000",
@@ -411,27 +424,95 @@ describe("GET|DELETE /api/mux/asset/[id]", () => {
     expect(body.errorMessage).toBe("Mux reported an asset error.");
   });
 
-  it("deletes an asset", async () => {
-    const { DELETE } = await importRoute("@/app/api/mux/asset/[id]/route");
+  it("deletes an asset when the capability issued for it is presented", async () => {
+    const { DELETE, DELETE_CAPABILITY_HEADER } = await importRoute("@/app/api/mux/asset/[id]/route");
     assetDelete.mockResolvedValue(undefined);
 
+    const token = issueDeleteCapability("upl_owned");
+    bindAssetToUpload("upl_owned", "ast_owned");
+
     const response = await DELETE(
-      request("http://localhost:3000/api/mux/asset/ast_1", { method: "DELETE" }),
-      params({ id: "ast_1" }),
+      request("http://localhost:3000/api/mux/asset/ast_owned", {
+        method: "DELETE",
+        headers: { [DELETE_CAPABILITY_HEADER]: token },
+      }),
+      params({ id: "ast_owned" }),
     );
 
     expect(response.status).toBe(200);
     await expect(response.json()).resolves.toEqual({ deleted: true });
-    expect(assetDelete).toHaveBeenCalledWith("ast_1");
+    expect(assetDelete).toHaveBeenCalledWith("ast_owned");
+  });
+
+  it("refuses an asset id with no capability, before touching Mux", async () => {
+    const { DELETE } = await importRoute("@/app/api/mux/asset/[id]/route");
+
+    const response = await DELETE(
+      request("http://localhost:3000/api/mux/asset/ast_someone_else", { method: "DELETE" }),
+      params({ id: "ast_someone_else" }),
+    );
+
+    expect(response.status).toBe(403);
+    await expect(response.json()).resolves.toMatchObject({
+      error: { code: "ASSET_NOT_OWNED" },
+    });
+    // The whole point: an arbitrary id never reaches the Mux account.
+    expect(assetDelete).not.toHaveBeenCalled();
+  });
+
+  it("refuses a capability issued for a different asset", async () => {
+    const { DELETE, DELETE_CAPABILITY_HEADER } = await importRoute("@/app/api/mux/asset/[id]/route");
+
+    const token = issueDeleteCapability("upl_mine");
+    bindAssetToUpload("upl_mine", "ast_mine");
+
+    const response = await DELETE(
+      request("http://localhost:3000/api/mux/asset/ast_theirs", {
+        method: "DELETE",
+        headers: { [DELETE_CAPABILITY_HEADER]: token },
+      }),
+      params({ id: "ast_theirs" }),
+    );
+
+    expect(response.status).toBe(403);
+    expect(assetDelete).not.toHaveBeenCalled();
+  });
+
+  it("refuses a guessed capability", async () => {
+    const { DELETE, DELETE_CAPABILITY_HEADER } = await importRoute("@/app/api/mux/asset/[id]/route");
+
+    const token = issueDeleteCapability("upl_guess");
+    bindAssetToUpload("upl_guess", "ast_guess");
+
+    const response = await DELETE(
+      request("http://localhost:3000/api/mux/asset/ast_guess", {
+        method: "DELETE",
+        // Flip the final hex digit, so the guess differs by exactly one
+        // character rather than by chance.
+        headers: {
+          [DELETE_CAPABILITY_HEADER]: `${token.slice(0, -1)}${token.endsWith("0") ? "1" : "0"}`,
+        },
+      }),
+      params({ id: "ast_guess" }),
+    );
+
+    expect(response.status).toBe(403);
+    expect(assetDelete).not.toHaveBeenCalled();
   });
 
   it("treats an already-deleted asset as success", async () => {
-    const { DELETE } = await importRoute("@/app/api/mux/asset/[id]/route");
+    const { DELETE, DELETE_CAPABILITY_HEADER } = await importRoute("@/app/api/mux/asset/[id]/route");
     assetDelete.mockRejectedValue(Object.assign(new Error("gone"), { status: 404 }));
 
+    const token = issueDeleteCapability("upl_gone");
+    bindAssetToUpload("upl_gone", "ast_gone");
+
     const response = await DELETE(
-      request("http://localhost:3000/api/mux/asset/ast_1", { method: "DELETE" }),
-      params({ id: "ast_1" }),
+      request("http://localhost:3000/api/mux/asset/ast_gone", {
+        method: "DELETE",
+        headers: { [DELETE_CAPABILITY_HEADER]: token },
+      }),
+      params({ id: "ast_gone" }),
     );
 
     expect(response.status).toBe(200);
@@ -439,12 +520,18 @@ describe("GET|DELETE /api/mux/asset/[id]", () => {
   });
 
   it("maps an upstream failure to 502", async () => {
-    const { DELETE } = await importRoute("@/app/api/mux/asset/[id]/route");
+    const { DELETE, DELETE_CAPABILITY_HEADER } = await importRoute("@/app/api/mux/asset/[id]/route");
     assetDelete.mockRejectedValue(new Error("secret=abc upstream exploded"));
 
+    const token = issueDeleteCapability("upl_502");
+    bindAssetToUpload("upl_502", "ast_502");
+
     const response = await DELETE(
-      request("http://localhost:3000/api/mux/asset/ast_1", { method: "DELETE" }),
-      params({ id: "ast_1" }),
+      request("http://localhost:3000/api/mux/asset/ast_502", {
+        method: "DELETE",
+        headers: { [DELETE_CAPABILITY_HEADER]: token },
+      }),
+      params({ id: "ast_502" }),
     );
 
     expect(response.status).toBe(502);

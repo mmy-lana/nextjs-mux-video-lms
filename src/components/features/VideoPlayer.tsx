@@ -170,13 +170,40 @@ export default function VideoPlayer(props: VideoPlayerProps) {
 
   /*
    * `next/dynamic` cannot forward a ref reliably, and the player is a custom
-   * element anyway, so the instance is read from the DOM. This is also the only
-   * accessor that is correct after a retry re-mounts the element.
+   * element anyway, so the instance is read from the DOM. It is cached rather
+   * than queried per call: `timeupdate` fires about four times a second, and
+   * each of those went through `querySelector`, walking the subtree on every
+   * tick for the life of the page.
+   *
+   * The cache is keyed on the stage, so a retry that re-mounts the element
+   * resolves the new instance rather than a stale one, and `invalidate` clears
+   * it whenever the key changes.
    */
+  const playerRef = useRef<{ stage: HTMLDivElement | null; element: MuxPlayerRefAttributes | null }>({
+    stage: null,
+    element: null,
+  });
+
+  const invalidatePlayer = useCallback(() => {
+    playerRef.current = { stage: null, element: null };
+  }, []);
+
   const player = useCallback((): MuxPlayerRefAttributes | null => {
-    const element = stage?.querySelector("mux-player");
-    return (element as MuxPlayerRefAttributes | null) ?? null;
+    if (playerRef.current.stage !== stage) {
+      // A new stage, or the element was re-created inside it.
+      const element = (stage?.querySelector("mux-player") ??
+        null) as MuxPlayerRefAttributes | null;
+
+      playerRef.current = { stage: stage ?? null, element };
+    }
+
+    return playerRef.current.element;
   }, [stage]);
+
+  /* A retry bumps `reloadKey` and mounts a new element in the same stage. */
+  useEffect(() => {
+    invalidatePlayer();
+  }, [invalidatePlayer, reloadKey]);
 
   /* ---------------------------------------------------------------- */
   /* Signed playback                                                   */
@@ -253,7 +280,8 @@ export default function VideoPlayer(props: VideoPlayerProps) {
   /* A new lesson is a new position. */
   useEffect(() => {
     seekAppliedRef.current = false;
-  }, [lesson.id]);
+    invalidatePlayer();
+  }, [invalidatePlayer, lesson.id]);
 
   const applyResumePosition = useCallback((element: MuxPlayerRefAttributes, durationSec: number) => {
     if (seekAppliedRef.current) return;

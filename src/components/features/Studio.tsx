@@ -431,6 +431,7 @@ export function ModuleEditor({
       playbackId: "",
       playbackPolicy: "public",
       muxAssetId: null,
+      muxDeleteToken: null,
       durationSec: null,
       isFreePreview: true,
       resources: [],

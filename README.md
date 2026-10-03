@@ -29,6 +29,32 @@ pnpm start        # http://localhost:3000
 
 ---
 
+## The bundled video asset
+
+The seed catalog plays one asset so the project runs with zero configuration. That
+asset is third-party demonstration material published by Mux: it serves correctly
+from both Mux endpoints, at 1920x1080 for 134 seconds, but **its licence is not
+stated by the publisher**, so it is demo-only. It is not cleared for
+redistribution or for a commercial deployment.
+
+Its provenance is recorded in code (`seedAssetProvenance()`) and the Studio says
+so on load. Before deploying, set `NEXT_PUBLIC_SEED_PLAYBACK_ID` to an asset you
+own or are licensed to publish — for example a Creative Commons work you have
+uploaded to your own Mux account.
+
+Verify any candidate before wiring it in:
+
+```bash
+pnpm run verify:playback -- <playback-id>
+```
+
+A playback ID answering `200` is not automatically usable as course material.
+Mux hosts short background-video loops as public assets, and a 9.8-second square
+clip would end before a learner could read the lesson title — silently breaking
+progress tracking, resume and the certificate flow. The verifier checks the
+manifest, the poster CDN, a minimum duration and the aspect ratio, and exits
+non-zero on failure.
+
 ## Environment variables
 
 Everything has a working default. Set only what you need.
@@ -41,7 +67,7 @@ Everything has a working default. Set only what you need.
 | `MUX_PRIVATE_KEY` | server | Base64-encoded private key for signing JWTs. |
 | `NEXT_PUBLIC_APP_URL` | public | Page origin, used as `cors_origin` for direct uploads. |
 | `NEXT_PUBLIC_MUX_ENV_KEY` | public | Mux Data environment key. Optional. |
-| `NEXT_PUBLIC_SEED_PLAYBACK_ID` | public | Overrides the demo playback ID for every seed course. |
+| `NEXT_PUBLIC_SEED_PLAYBACK_ID` | public | Replaces the bundled demo asset for every seed course. See the section above. |
 
 **Without Mux credentials the app still does everything except upload.** The
 Studio detects this on load and says so; courses can be authored as text-only
@@ -75,6 +101,24 @@ the Studio can choose its mode before the author commits to anything.
 Server Components own everything knowable ahead of time — course data, metadata,
 static params — and mount client islands only at the leaves that touch
 `localStorage`, the player, or a browser API.
+
+### Deleting a Mux asset
+
+`DELETE /api/mux/asset/[id]` is a live operation against an account this app
+does not own the credentials to, and it is not reversible from here. It
+therefore requires a **capability**: `POST /api/mux/upload` mints a random token
+when it creates an upload, remembers its digest, and returns it. Deleting an
+asset requires presenting the token issued for that asset, checked in constant
+time before any call reaches Mux.
+
+An asset id on its own authorises nothing. A capability issued for one asset
+cannot be replayed against another, and a caller who supplies neither is refused
+with `403 ASSET_NOT_OWNED`.
+
+The token is persisted on the job and on the lesson, because the delete happens
+long after the upload and possibly in a different session. The registry is
+in-memory and TTL-pruned, matching the rate limiter's documented best-effort
+caveat on serverless runtimes.
 
 ### Where state lives, and why
 
@@ -135,6 +179,7 @@ pnpm run verify        # all three, in order
 pnpm run test:e2e      # Playwright, against a production build
 pnpm run verify:responsive   # viewport matrix, 5 sizes x N routes, headless
 pnpm run audit               # touch targets, focus, landmarks, contrast
+pnpm run verify:playback -- <id>   # validate a replacement video asset
 ```
 
 The Playwright suite covers the full learner journey (browse → enrol → watch →
@@ -198,3 +243,5 @@ flip above their trigger when there is no room below.
 - **Chromium only.** The Playwright projects run Chromium at a desktop and a
   mobile viewport. WebKit and Firefox would re-prove the same CSS at twice the
   runtime.
+- **The bundled asset is not licensed for redistribution.** It makes the project
+  run out of the box; it is not a content choice. See the section above.

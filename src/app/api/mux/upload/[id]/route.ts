@@ -8,6 +8,7 @@
 
 import { NotFoundError, UpstreamError } from "@/lib/mux/errors";
 import { withMuxParamsHandler } from "@/lib/mux/handler";
+import { bindAssetToUpload } from "@/lib/mux/registry";
 import { getMuxClient } from "@/lib/mux/server";
 import { muxIdParamSchema } from "@/lib/schemas";
 import type { UploadStatus, UploadStatusResponse } from "@/lib/types";
@@ -50,6 +51,13 @@ export const GET = withMuxParamsHandler(muxIdParamSchema, async ({ id }) => {
   const status: UploadStatus = UPLOAD_STATUSES.has(upload.status)
     ? (upload.status as UploadStatus)
     : "waiting";
+
+  /*
+   * This is the first point at which Mux reveals which asset the upload became.
+   * Binding it here is what lets `DELETE /api/mux/asset/[id]` tell "created by
+   * this deployment" from "some other asset in the same account".
+   */
+  if (upload.asset_id) bindAssetToUpload(id, upload.asset_id);
 
   const body: UploadStatusResponse = {
     status,

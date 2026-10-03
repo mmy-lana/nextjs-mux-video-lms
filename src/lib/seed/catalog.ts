@@ -64,6 +64,9 @@ function buildLesson(
     playbackId: SEED_PLAYBACK_ID,
     playbackPolicy: "public",
     muxAssetId: null,
+    // Seed lessons ship no upload of their own, so they carry no capability to
+    // delete one with. The bundled asset belongs to its publisher, not to us.
+    muxDeleteToken: null,
     // The real runtime is learned from the player; inventing one here would put
     // a number on screen that does not match the video (decision D5).
     durationSec: null,

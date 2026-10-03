@@ -281,7 +281,22 @@ export function AppShell({ children, profile = null, hideBottomNav = false }: Ap
         </div>
       </header>
 
-      <main id="main" className="flex-1 pb-20 md:pb-0">
+      {/*
+        The mobile bottom nav is `min-h-14` plus the home-indicator inset, so
+        `pb-20` (5rem) cleared it only where the inset was zero. On a device
+        with a home indicator the bar is taller than that, and the last row of a
+        long page sat underneath it. Padding by the bar's own height plus the
+        inset tracks it exactly at every size.
+      */}
+      <main
+        id="main"
+        className={cn(
+          "flex-1",
+          hideBottomNav
+            ? "pb-4"
+            : "pb-[calc(4.5rem+env(safe-area-inset-bottom))] md:pb-0",
+        )}
+      >
         {children}
       </main>
 

@@ -79,6 +79,9 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   return payload as T;
 }
 
+/** Header the delete capability travels in. Mirrors the route's constant. */
+export const DELETE_CAPABILITY_HEADER = "x-mux-delete-capability";
+
 /**
  * What this deployment supports.
  *
@@ -116,14 +119,28 @@ export function fetchAssetStatus(assetId: string): Promise<AssetStatusResponse> 
 /**
  * Delete a Mux asset, best-effort.
  *
+ * `deleteToken` is the capability issued when the asset's upload was created.
+ * Without it the route refuses: an asset id on its own authorises nothing, and
+ * the route is a DELETE against a live account rather than a local record.
+ *
  * The caller is removing a lesson; failing to delete the remote asset must not
- * block the local removal, so this resolves rather than throwing.
+ * block the local removal, so this resolves `false` rather than throwing.
  */
-export async function deleteMuxAsset(assetId: string): Promise<boolean> {
+export async function deleteMuxAsset(
+  assetId: string,
+  deleteToken: string | null | undefined,
+): Promise<boolean> {
+  // Without the capability there is nothing to attempt; calling anyway would
+  // only produce a guaranteed 403.
+  if (typeof deleteToken !== "string" || deleteToken.length === 0) return false;
+
   try {
     const result = await request<DeleteAssetResponse>(
       `/api/mux/asset/${encodeURIComponent(assetId)}`,
-      { method: "DELETE" },
+      {
+        method: "DELETE",
+        headers: { [DELETE_CAPABILITY_HEADER]: deleteToken },
+      },
     );
 
     return result.deleted === true;

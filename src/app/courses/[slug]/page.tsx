@@ -27,7 +27,21 @@ export async function generateMetadata({ params }: CoursePageProps): Promise<Met
   const { slug } = await params;
   const course = findSeedCourse(slug);
 
-  if (!course) return { title: "Course not found" };
+  /*
+   * A slug the server cannot resolve is not necessarily missing: a Studio course
+   * exists only in one browser, so the page resolves it on the client. Returning
+   * "Course not found" here would put that in the document title, the tab and
+   * any share preview, which is both wrong and self-contradictory with the page
+   * the client then renders. A neutral title is the honest answer; the client
+   * updates the title once it knows better.
+   */
+  if (!course) {
+    return {
+      title: "Course",
+      description: "A course published from the Aura instructor studio.",
+      robots: { index: false, follow: false },
+    };
+  }
 
   const instructor = findInstructor(course.instructorId);
 

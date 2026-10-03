@@ -38,6 +38,8 @@ export const TOKEN_REFRESH_MARGIN_MS = 5 * 60_000;
 export interface ReadyLessonPayload {
   playbackId: string;
   muxAssetId: string;
+  /** Capability required to delete this asset later; `null` if it was not issued. */
+  deleteToken: string | null;
   durationSec: number | null;
   policy: PlaybackPolicy;
 }
@@ -165,6 +167,7 @@ export function useUploadJobs(options: UseUploadJobsOptions = {}): UseUploadJobs
                 callbacks.current.onReady?.(ready, {
                   playbackId: ready.playbackId,
                   muxAssetId: ready.muxAssetId ?? "",
+                  deleteToken: ready.deleteToken,
                   durationSec: ready.durationSec,
                   policy,
                 });
@@ -210,13 +213,14 @@ export function useUploadJobs(options: UseUploadJobsOptions = {}): UseUploadJobs
       lessonTitle: string;
       policy: PlaybackPolicy;
     }) => {
-      const { uploadId, url } = await createDirectUpload(input.policy);
+      const { uploadId, url, deleteToken } = await createDirectUpload(input.policy);
       const job = createStudioUploadJob(
         input.courseId,
         input.moduleId,
         input.lessonTitle,
         uploadId,
         input.policy,
+        deleteToken,
       );
 
       studioJobsStore.set((snapshot) => ({ ...snapshot, [job.id]: job }));

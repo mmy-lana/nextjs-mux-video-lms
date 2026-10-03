@@ -1,0 +1,18 @@
+{
+  "$comment": "Editor support for the standalone Node scripts, which run under Node's type stripping with their own resolver rather than through the Next.js compiler.",
+  "compilerOptions": {
+    "target": "ES2022",
+    "lib": ["esnext"],
+    "strict": true,
+    "noEmit": true,
+    "module": "esnext",
+    "moduleResolution": "bundler",
+    "allowImportingTsExtensions": true,
+    "erasableSyntaxOnly": true,
+    "verbatimModuleSyntax": true,
+    "skipLibCheck": true,
+    "isolatedModules": true,
+    "types": ["node"]
+  },
+  "include": ["scripts/**/*.ts", "scripts/**/*.mjs"]
+}
